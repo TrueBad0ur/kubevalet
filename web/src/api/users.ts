@@ -33,9 +33,14 @@ export interface CreateUserRequest {
 }
 
 export interface UpdateRBACRequest {
+  groups?: string[]
   clusterRole?: string
   rules?: PolicyRule[]
   namespaceBindings?: NamespaceBinding[]
+}
+
+export interface UpdateRBACResponse {
+  kubeconfig?: string
 }
 
 export interface CreateUserResponse {
@@ -53,8 +58,9 @@ export async function createUser(req: CreateUserRequest): Promise<CreateUserResp
   return res.data
 }
 
-export async function updateUserRBAC(name: string, req: UpdateRBACRequest): Promise<void> {
-  await client.put(`/users/${name}/rbac`, req)
+export async function updateUserRBAC(name: string, req: UpdateRBACRequest): Promise<UpdateRBACResponse> {
+  const res = await client.put<UpdateRBACResponse>(`/users/${name}/rbac`, req)
+  return res.data
 }
 
 export async function deleteUser(name: string): Promise<void> {

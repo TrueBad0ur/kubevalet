@@ -8,6 +8,7 @@
     </template>
 
     <div v-if="error" class="alert alert-error">{{ error }}</div>
+    <div v-if="editSuccessMsg" class="alert alert-success">{{ editSuccessMsg }}</div>
 
     <div class="card">
       <div v-if="loading" style="padding:40px;text-align:center">
@@ -24,16 +25,20 @@
         <table>
           <thead>
             <tr>
-              <th>Name</th>
+              <th @click="setSort('name')" style="cursor:pointer;user-select:none;white-space:nowrap">
+                Name <span class="sort-indicator">{{ sortKey === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
               <th>Groups</th>
               <th>Binding</th>
-              <th>Status</th>
-              <th>Created</th>
+              <th>Status <span style="font-size:11px;font-weight:400;color:var(--text-muted)" title="Active = certificate issued and valid">(?)</span></th>
+              <th @click="setSort('createdAt')" style="cursor:pointer;user-select:none;white-space:nowrap">
+                Created <span class="sort-indicator">{{ sortKey === 'createdAt' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
+              </th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in users" :key="u.name">
+            <tr v-for="u in sortedUsers" :key="u.name">
               <td class="font-mono">{{ u.name }}</td>
               <td>
                 <span v-if="u.groups?.length" class="flex gap-2" style="flex-wrap:wrap">
@@ -115,7 +120,32 @@
         <div class="modal-header">Edit permissions — <strong class="font-mono">{{ editTarget.name }}</strong></div>
         <div class="modal-body">
           <div v-if="editError" class="alert alert-error">{{ editError }}</div>
+          <div v-if="editGroupsChanged" class="alert alert-error" style="display:flex;align-items:center;gap:8px">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" style="flex-shrink:0"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-5a1 1 0 00-.993.883L9 9v2a1 1 0 001.993.117L11 11V9a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+            <span>Groups are baked into the x509 certificate. Saving will <strong style="margin:0 3px">regenerate the certificate</strong> — a new kubeconfig will be issued.</span>
+          </div>
           <form @submit.prevent="submitEdit">
+
+            <div class="form-group">
+              <label class="form-label">Groups</label>
+              <div class="tags-input" @click="editGroupInput?.focus()">
+                <span v-for="g in editGroups" :key="g" class="tag">
+                  {{ g }}
+                  <button type="button" @click.stop="editRemoveGroup(g)">×</button>
+                </span>
+                <input
+                  ref="editGroupInput"
+                  v-model="editGroupDraft"
+                  type="text"
+                  placeholder="Type and press Enter…"
+                  @keydown.enter.prevent="editAddGroup"
+                  @keydown.tab.prevent="editAddGroup"
+                  @keydown.backspace="editOnBackspace"
+                  @keydown.comma.prevent="editAddGroup"
+                  @blur="editAddGroup"
+                />
+              </div>
+            </div>
 
             <div class="form-group">
               <label class="form-label">Access scope</label>
@@ -255,6 +285,26 @@
       </div>
     </div>
 
+    <!-- New kubeconfig after cert regeneration -->
+    <div v-if="editKubeconfig" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          New kubeconfig — <strong class="font-mono">{{ editKubeconfigUser }}</strong>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom:12px;font-size:13.5px">
+            Certificate was regenerated with updated groups. Previous kubeconfig is now invalid.
+          </p>
+          <textarea readonly class="code-block" style="width:100%;resize:none;border:none;outline:none;cursor:text"
+            :rows="editKubeconfig.split('\n').length">{{ editKubeconfig }}</textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="copyEditKubeconfig">{{ editKubeconfigCopied ? '✓ Copied' : 'Copy' }}</button>
+          <button class="btn btn-ghost" @click="editKubeconfig = ''">Close</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Rules viewer modal -->
     <div v-if="rulesTarget" class="modal-overlay" @click.self="rulesTarget = null">
       <div class="modal" style="max-width:680px">
@@ -317,10 +367,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listUsers, deleteUser, updateUserRBAC, type User, type NamespaceBinding, type PolicyRule } from '@/api/users'
+import { listUsers, deleteUser, updateUserRBAC, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
 import { client } from '@/api/client'
 
 const EDIT_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
@@ -359,6 +409,30 @@ const users       = ref<User[]>([])
 const loading     = ref(true)
 const error       = ref('')
 const deleting    = ref('')
+
+const sortKey = ref<'name' | 'createdAt'>('name')
+const sortDir = ref<'asc' | 'desc'>('asc')
+
+function setSort(key: 'name' | 'createdAt') {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+const sortedUsers = computed(() => {
+  return [...users.value].sort((a, b) => {
+    let cmp: number
+    if (sortKey.value === 'name') {
+      cmp = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    } else {
+      cmp = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    }
+    return sortDir.value === 'asc' ? cmp : -cmp
+  })
+})
 const downloading = ref('')
 const viewing     = ref('')
 const deleteTarget = ref<string | null>(null)
@@ -382,18 +456,44 @@ function editEmptyNsBinding(): NsBindingEditDraft {
   return { namespace: '', role: '', advanced: false, rules: [editEmptyRule()] }
 }
 
-const editTarget      = ref<User | null>(null)
-const editBindingType = ref<'cluster' | 'namespace'>('cluster')
-const editAdvanced    = ref(false)
-const editForm        = reactive({ clusterRole: '' })
-const editRules       = ref<RuleDraft[]>([editEmptyRule()])
-const editNsBindings  = ref<NsBindingEditDraft[]>([editEmptyNsBinding()])
-const editSaving      = ref(false)
-const editError       = ref('')
+const editTarget        = ref<User | null>(null)
+const editOriginalGroups = ref<string[]>([])
+const editBindingType   = ref<'cluster' | 'namespace'>('cluster')
+const editAdvanced      = ref(false)
+const editForm          = reactive({ clusterRole: '' })
+const editGroups        = ref<string[]>([])
+const editGroupDraft    = ref('')
+const editGroupInput    = ref<HTMLInputElement | null>(null)
+const editRules         = ref<RuleDraft[]>([editEmptyRule()])
+const editNsBindings    = ref<NsBindingEditDraft[]>([editEmptyNsBinding()])
+const editSaving        = ref(false)
+const editError         = ref('')
+const editKubeconfig    = ref('')
+const editKubeconfigUser = ref('')
+const editKubeconfigCopied = ref(false)
+const editSuccessMsg    = ref('')
+
+const editGroupsChanged = computed(() => {
+  const a = [...editGroups.value].sort()
+  const b = [...editOriginalGroups.value].sort()
+  return a.length !== b.length || a.some((v, i) => v !== b[i])
+})
+
+function editAddGroup() {
+  const val = editGroupDraft.value.trim()
+  if (val && !editGroups.value.includes(val)) editGroups.value.push(val)
+  editGroupDraft.value = ''
+}
+function editRemoveGroup(g: string) { editGroups.value = editGroups.value.filter(x => x !== g) }
+function editOnBackspace() { if (!editGroupDraft.value && editGroups.value.length) editGroups.value.pop() }
 
 function openEdit(u: User) {
-  editTarget.value   = u
-  editError.value    = ''
+  editTarget.value         = u
+  editError.value          = ''
+  editSuccessMsg.value     = ''
+  editGroups.value         = [...(u.groups ?? [])]
+  editOriginalGroups.value = [...(u.groups ?? [])]
+  editGroupDraft.value     = ''
   const hasNs = !!(u.namespaceBindings?.length)
   editBindingType.value = hasNs ? 'namespace' : 'cluster'
   editAdvanced.value    = !!u.customRole
@@ -409,29 +509,62 @@ function openEdit(u: User) {
     : [editEmptyNsBinding()]
 }
 
+async function copyEditKubeconfig() {
+  try { await navigator.clipboard.writeText(editKubeconfig.value) } catch {
+    const ta = document.createElement('textarea')
+    ta.value = editKubeconfig.value; ta.style.cssText = 'position:fixed;opacity:0'
+    document.body.appendChild(ta); ta.focus(); ta.select()
+    document.execCommand('copy'); document.body.removeChild(ta)
+  }
+  editKubeconfigCopied.value = true
+  setTimeout(() => { editKubeconfigCopied.value = false }, 2000)
+}
+
 async function submitEdit() {
   if (!editTarget.value) return
+  // Flush any pending group draft before submitting
+  editAddGroup()
   editError.value  = ''
   editSaving.value = true
   try {
-    let payload
+    let payload: Record<string, unknown> = { groups: editGroups.value }
     if (editBindingType.value === 'cluster') {
-      payload = editAdvanced.value
-        ? { rules: editRules.value.map(draftToRule) }
-        : { clusterRole: editForm.clusterRole }
-    } else {
-      payload = {
-        namespaceBindings: editNsBindings.value.map(nb => ({
-          namespace: nb.namespace,
-          ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
-        })) as NamespaceBinding[],
+      if (editAdvanced.value) {
+        payload.rules = editRules.value.map(draftToRule)
+      } else {
+        if (!editForm.clusterRole) {
+          editError.value = 'Select a cluster role'
+          return
+        }
+        payload.clusterRole = editForm.clusterRole
       }
+    } else {
+      for (const nb of editNsBindings.value) {
+        if (!nb.namespace) { editError.value = 'Each namespace binding must have a namespace'; return }
+        if (!nb.advanced && !nb.role) { editError.value = 'Each namespace binding must have a role'; return }
+        if (nb.advanced && !nb.rules.some(r => r.resources.trim())) {
+          editError.value = 'Each custom namespace binding must have at least one rule with resources'; return
+        }
+      }
+      payload.namespaceBindings = editNsBindings.value.map(nb => ({
+        namespace: nb.namespace,
+        ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+      })) as NamespaceBinding[]
     }
-    await updateUserRBAC(editTarget.value.name, payload)
-    editTarget.value = null
+    const name = editTarget.value.name
+    const res: UpdateRBACResponse = await updateUserRBAC(name, payload)
+    if (res.kubeconfig) {
+      editKubeconfig.value     = res.kubeconfig
+      editKubeconfigUser.value = name
+      editTarget.value         = null
+    } else {
+      editSuccessMsg.value = 'Permissions updated'
+      setTimeout(() => { editSuccessMsg.value = '' }, 3000)
+      editTarget.value = null
+    }
     await load()
   } catch (e: any) {
-    editError.value = e.response?.data?.error ?? 'Failed to update permissions'
+    editError.value = e.response?.data?.error ?? 'Failed to update'
   } finally {
     editSaving.value = false
   }

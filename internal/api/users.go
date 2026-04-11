@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -237,6 +239,16 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, rules, or namespaceBindings"))
 		return
 	}
+	for _, nb := range req.NamespaceBindings {
+		if nb.Namespace == "" {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("each namespaceBinding must have a namespace"))
+			return
+		}
+		if nb.Role == "" && len(nb.Rules) == 0 {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("each namespaceBinding must have role or rules"))
+			return
+		}
+	}
 
 	csr, err := h.k8s.GetCSR(ctx, username)
 	if err != nil {
@@ -283,10 +295,11 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		return
 	}
 
-	// Update CSR annotations
+	// Build new annotations
 	newAnn := map[string]string{}
-	if g := ann[k8s.AnnotationGroups]; g != "" {
-		newAnn[k8s.AnnotationGroups] = g
+	newGroups := req.Groups
+	if len(newGroups) > 0 {
+		newAnn[k8s.AnnotationGroups] = strings.Join(newGroups, ",")
 	}
 	if req.ClusterRole != "" {
 		newAnn[k8s.AnnotationClusterRole] = req.ClusterRole
@@ -299,12 +312,66 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 			newAnn[k8s.AnnotationNamespaceBindings] = string(data)
 		}
 	}
+
+	// Check if groups changed — if so, regenerate the x509 certificate
+	var oldGroups []string
+	if g := ann[k8s.AnnotationGroups]; g != "" {
+		oldGroups = strings.Split(g, ",")
+	}
+	if groupsChanged(oldGroups, newGroups) {
+		kp, err := cert.Generate(username, newGroups)
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, fmt.Errorf("generate key pair: %w", err))
+			return
+		}
+
+		// Delete old CSR and secret, recreate with new groups
+		if err := h.k8s.DeleteCSR(ctx, username); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		time.Sleep(300 * time.Millisecond) // brief wait for k8s to process deletion
+
+		certPEM, err := h.k8s.SubmitAndApproveCSR(ctx, username, kp.CSRPEM, newAnn)
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		_ = h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace)
+		if err := h.k8s.StorePrivateKey(ctx, username, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		caData, err := h.k8s.GetCAData()
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+		kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
+			Username:      username,
+			ClusterName:   h.cfg.ClusterName,
+			ClusterServer: h.clusterServer(),
+			ClusterCA:     caData,
+			ClientCert:    certPEM,
+			ClientKey:     kp.PrivateKeyPEM,
+		})
+		if err != nil {
+			respondError(c, http.StatusInternalServerError, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, models.UpdateRBACResponse{Kubeconfig: string(kubeconfigYAML)})
+		return
+	}
+
+	// Groups unchanged — just update annotations
 	if err := h.k8s.UpdateCSRAnnotations(ctx, username, newAnn); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, models.UpdateRBACResponse{})
 }
 
 func (h *Handler) DownloadKubeconfig(c *gin.Context) {
@@ -412,6 +479,16 @@ func decodeNsBindings(s string) []models.NamespaceBinding {
 		}
 	}
 	return result
+}
+
+func groupsChanged(old, new []string) bool {
+	cp := func(s []string) []string {
+		c := make([]string, len(s))
+		copy(c, s)
+		sort.Strings(c)
+		return c
+	}
+	return !slices.Equal(cp(old), cp(new))
 }
 
 func csrStatusString(csr certificatesv1.CertificateSigningRequest) string {

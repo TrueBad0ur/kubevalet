@@ -39,11 +39,16 @@ type CreateUserRequest struct {
 }
 
 type UpdateRBACRequest struct {
+	Groups            []string           `json:"groups"`
 	// Cluster-wide
 	ClusterRole       string             `json:"clusterRole"`
-	Rules             []PolicyRule       `json:"rules"` // cluster-wide custom rules
+	Rules             []PolicyRule       `json:"rules"`
 	// Namespace-scoped
 	NamespaceBindings []NamespaceBinding `json:"namespaceBindings"`
+}
+
+type UpdateRBACResponse struct {
+	Kubeconfig string `json:"kubeconfig,omitempty"` // populated when groups changed and cert was regenerated
 }
 
 type CreateUserResponse struct {
