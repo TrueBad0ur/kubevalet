@@ -44,3 +44,8 @@ export async function updateGroup(name: string, payload: UpdateGroupPayload): Pr
 export async function deleteGroup(name: string): Promise<void> {
   await api.delete(`/groups/${name}`)
 }
+
+export async function syncGroup(name: string): Promise<{ repaired: string[] }> {
+  const res = await api.post<{ repaired: string[] }>(`/groups/${name}/sync`)
+  return res.data
+}

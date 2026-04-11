@@ -45,6 +45,7 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.POST("/groups", h.CreateGroup)
 	protected.PUT("/groups/:name", h.UpdateGroup)
 	protected.DELETE("/groups/:name", h.DeleteGroup)
+	protected.POST("/groups/:name/sync", h.SyncGroup)
 }
 
 type errorResponse struct {

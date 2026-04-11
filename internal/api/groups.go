@@ -218,6 +218,62 @@ func (h *Handler) DeleteGroup(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) SyncGroup(c *gin.Context) {
+	groupName := c.Param("name")
+	ctx := c.Request.Context()
+
+	var (
+		clusterRole string
+		customRole  bool
+		rulesJSON   []byte
+		nsJSON      []byte
+	)
+	err := h.db.QueryRow(ctx,
+		"SELECT cluster_role, custom_role, rules, ns_bindings FROM groups WHERE name=$1", groupName).
+		Scan(&clusterRole, &customRole, &rulesJSON, &nsJSON)
+	if err != nil {
+		respondError(c, http.StatusNotFound, fmt.Errorf("group %q not found", groupName))
+		return
+	}
+
+	var rules []models.PolicyRule
+	var nsBindings []models.NamespaceBinding
+	_ = json.Unmarshal(rulesJSON, &rules)
+	_ = json.Unmarshal(nsJSON, &nsBindings)
+
+	// Delete existing then recreate from DB
+	var errs []string
+	collect := func(e error) {
+		if e != nil {
+			errs = append(errs, e.Error())
+		}
+	}
+	collect(h.k8s.DeleteGroupClusterRoleBinding(ctx, groupName))
+	if customRole && len(nsBindings) == 0 {
+		collect(h.k8s.DeleteGroupCustomClusterRole(ctx, groupName))
+	}
+	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
+	if len(errs) > 0 {
+		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		return
+	}
+
+	var rbacErr error
+	if clusterRole != "" {
+		rbacErr = h.k8s.CreateGroupClusterRoleBinding(ctx, groupName, clusterRole)
+	} else if customRole && len(nsBindings) == 0 {
+		rbacErr = h.k8s.CreateGroupCustomClusterRole(ctx, groupName, rules)
+	} else if len(nsBindings) > 0 {
+		rbacErr = h.k8s.CreateGroupNamespaceBindings(ctx, groupName, nsBindings)
+	}
+	if rbacErr != nil {
+		respondError(c, http.StatusInternalServerError, fmt.Errorf("recreate rbac: %w", rbacErr))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"repaired": []string{"rbac"}})
+}
+
 func validateGroupRBAC(clusterRole string, rules []models.PolicyRule, nsBindings []models.NamespaceBinding) error {
 	for _, nb := range nsBindings {
 		if nb.Namespace == "" {

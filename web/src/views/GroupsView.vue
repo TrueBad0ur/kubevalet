@@ -5,6 +5,7 @@
     </template>
 
     <div v-if="loadError" class="alert alert-error">{{ loadError }}</div>
+    <div v-if="syncMsg"   class="alert alert-success">{{ syncMsg }}</div>
 
     <div class="card">
       <div class="card-header">
@@ -40,6 +41,11 @@
               <td class="text-muted text-sm">{{ fmtDate(g.createdAt) }}</td>
               <td style="text-align:right;white-space:nowrap">
                 <button class="btn btn-ghost btn-sm" style="margin-right:4px" @click="openEdit(g)">Edit</button>
+                <button class="btn btn-ghost btn-sm" style="margin-right:4px" @click="doSync(g.name)"
+                  :disabled="syncing === g.name" title="Recreate missing k8s objects from database">
+                  <span v-if="syncing === g.name" class="spinner" />
+                  <span v-else>Sync</span>
+                </button>
                 <button class="btn btn-danger btn-sm" @click="confirmDelete(g)">Delete</button>
               </td>
             </tr>
@@ -233,7 +239,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { listGroups, createGroup, updateGroup, deleteGroup, type Group } from '@/api/groups'
+import { listGroups, createGroup, updateGroup, deleteGroup, syncGroup, type Group } from '@/api/groups'
 import type { NamespaceBinding, PolicyRule } from '@/api/users'
 
 const COMMON_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
@@ -383,6 +389,24 @@ async function saveModal() {
 }
 
 // ── Delete ───────────────────────────────────────────────────────
+const syncing   = ref('')
+const syncMsg   = ref('')
+
+async function doSync(name: string) {
+  syncing.value = name
+  try {
+    const res = await syncGroup(name)
+    const repaired = res.repaired?.join(', ') || 'nothing missing'
+    syncMsg.value = `Sync ${name}: ${repaired}`
+    setTimeout(() => { syncMsg.value = '' }, 4000)
+  } catch (e: any) {
+    loadError.value = e.response?.data?.error ?? 'Sync failed'
+    setTimeout(() => { loadError.value = '' }, 4000)
+  } finally {
+    syncing.value = ''
+  }
+}
+
 const delTarget = ref<Group | null>(null)
 const deleting  = ref(false)
 const delError  = ref('')
