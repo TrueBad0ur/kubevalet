@@ -36,6 +36,8 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.PUT("/users/:name/rbac", h.UpdateUserRBAC)
 	protected.DELETE("/users/:name", h.DeleteUser)
 	protected.GET("/users/:name/kubeconfig", h.DownloadKubeconfig)
+	protected.GET("/settings", h.GetSettings)
+	protected.PUT("/settings/password", h.ChangePassword)
 }
 
 type errorResponse struct {

@@ -13,6 +13,7 @@ FROM --platform=$BUILDPLATFORM golang:1.26.2-alpine AS builder
 # Injected by `docker buildx build --platform`
 ARG TARGETOS
 ARG TARGETARCH
+ARG VERSION=dev
 WORKDIR /app
 
 COPY go.mod go.sum ./
@@ -23,7 +24,8 @@ COPY . .
 COPY --from=frontend /app/web/dist ./web/dist
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-w -s" -o /kubevalet ./cmd/server
+    go build -ldflags="-w -s -X github.com/kubevalet/kubevalet/internal/version.Version=${VERSION}" \
+    -o /kubevalet ./cmd/server
 
 # ── Stage 3: Minimal runtime (distroless is multi-arch) ─────────────────────
 FROM gcr.io/distroless/static-debian12:nonroot

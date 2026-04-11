@@ -1,7 +1,9 @@
 import { createRouter, createWebHistory, type RouteLocationRaw } from 'vue-router'
-import LoginView from '@/views/LoginView.vue'
-import UsersView from '@/views/UsersView.vue'
-import CreateUserView from '@/views/CreateUserView.vue'
+import LoginView        from '@/views/LoginView.vue'
+import UsersView        from '@/views/UsersView.vue'
+import CreateUserView   from '@/views/CreateUserView.vue'
+import SettingsView     from '@/views/SettingsView.vue'
+import IntegrationsView from '@/views/IntegrationsView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -12,9 +14,11 @@ declare module 'vue-router' {
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/login',     component: LoginView,      meta: { public: true } },
-    { path: '/',          component: UsersView },
-    { path: '/users/new', component: CreateUserView },
+    { path: '/login',        component: LoginView,        meta: { public: true } },
+    { path: '/',             component: UsersView },
+    { path: '/users/new',    component: CreateUserView },
+    { path: '/settings',     component: SettingsView },
+    { path: '/integrations', component: IntegrationsView },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

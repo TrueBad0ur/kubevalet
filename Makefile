@@ -62,6 +62,7 @@ docker-buildx-push:
 	docker buildx build \
 	  --builder kubevalet-builder \
 	  --platform $(PLATFORMS) \
+	  --build-arg VERSION=$(TAG) \
 	  -t $(IMAGE):$(TAG) \
 	  -t $(IMAGE):latest \
 	  --push \

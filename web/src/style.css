@@ -45,6 +45,7 @@ body { background: var(--bg); color: var(--text); font-size: 14px; line-height: 
   background: rgba(255,255,255,.07); color: #fff;
 }
 .sidebar-nav a svg { width: 16px; height: 16px; flex-shrink: 0; }
+.sidebar-divider { height: 1px; background: rgba(255,255,255,.07); margin: 8px 20px; }
 .sidebar-footer {
   padding: 16px 20px;
   border-top: 1px solid rgba(255,255,255,.07);
