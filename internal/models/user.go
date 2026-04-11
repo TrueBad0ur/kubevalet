@@ -33,3 +33,10 @@ type CreateUserResponse struct {
 	User       User   `json:"user"`
 	Kubeconfig string `json:"kubeconfig"`
 }
+
+type UpdateRBACRequest struct {
+	ClusterRole string       `json:"clusterRole"`
+	Namespace   string       `json:"namespace"`
+	Role        string       `json:"role"`
+	Rules       []PolicyRule `json:"rules"`
+}

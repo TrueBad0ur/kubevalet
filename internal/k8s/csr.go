@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
@@ -88,6 +89,30 @@ func (c *Client) ListManagedCSRs(ctx context.Context) ([]certificatesv1.Certific
 		return nil, fmt.Errorf("list csrs: %w", err)
 	}
 	return list.Items, nil
+}
+
+// UpdateCSRAnnotations replaces all kubevalet.io/ annotations on the CSR with the provided map.
+func (c *Client) UpdateCSRAnnotations(ctx context.Context, username string, annotations map[string]string) error {
+	csr, err := c.Kubernetes.CertificatesV1().CertificateSigningRequests().Get(ctx, resourceName(username), metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("get csr: %w", err)
+	}
+	if csr.Annotations == nil {
+		csr.Annotations = map[string]string{}
+	}
+	for k := range csr.Annotations {
+		if strings.HasPrefix(k, "kubevalet.io/") {
+			delete(csr.Annotations, k)
+		}
+	}
+	for k, v := range annotations {
+		csr.Annotations[k] = v
+	}
+	_, err = c.Kubernetes.CertificatesV1().CertificateSigningRequests().Update(ctx, csr, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("update csr annotations: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) DeleteCSR(ctx context.Context, username string) error {

@@ -33,6 +33,7 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.GET("/auth/me", h.Me)
 	protected.GET("/users", h.ListUsers)
 	protected.POST("/users", h.CreateUser)
+	protected.PUT("/users/:name/rbac", h.UpdateUserRBAC)
 	protected.DELETE("/users/:name", h.DeleteUser)
 	protected.GET("/users/:name/kubeconfig", h.DownloadKubeconfig)
 }

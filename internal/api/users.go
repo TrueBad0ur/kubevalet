@@ -201,6 +201,100 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *Handler) UpdateUserRBAC(c *gin.Context) {
+	username := c.Param("name")
+	ctx := c.Request.Context()
+
+	var req models.UpdateRBACRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	advanced := len(req.Rules) > 0
+	if !advanced && req.ClusterRole == "" && (req.Namespace == "" || req.Role == "") {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, namespace+role, or rules"))
+		return
+	}
+
+	csr, err := h.k8s.GetCSR(ctx, username)
+	if err != nil {
+		if k8serrors.IsNotFound(err) {
+			respondError(c, http.StatusNotFound, fmt.Errorf("user %q not found", username))
+			return
+		}
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	oldNs := csr.Annotations[k8s.AnnotationNamespace]
+	oldCustom := csr.Annotations[k8s.AnnotationCustomRole] == "true"
+
+	// Remove old bindings
+	var errs []string
+	collect := func(e error) {
+		if e != nil {
+			errs = append(errs, e.Error())
+		}
+	}
+	collect(h.k8s.DeleteClusterRoleBinding(ctx, username))
+	if oldNs != "" {
+		collect(h.k8s.DeleteRoleBinding(ctx, username, oldNs))
+	}
+	if oldCustom {
+		if oldNs != "" {
+			collect(h.k8s.DeleteCustomRole(ctx, username, oldNs))
+		} else {
+			collect(h.k8s.DeleteCustomClusterRole(ctx, username))
+		}
+	}
+	if len(errs) > 0 {
+		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		return
+	}
+
+	// Create new bindings
+	if advanced {
+		if req.Namespace != "" {
+			err = h.k8s.CreateCustomRole(ctx, username, req.Namespace, req.Rules)
+		} else {
+			err = h.k8s.CreateCustomClusterRole(ctx, username, req.Rules)
+		}
+	} else if req.ClusterRole != "" {
+		err = h.k8s.CreateClusterRoleBinding(ctx, username, req.ClusterRole)
+	} else {
+		err = h.k8s.CreateRoleBinding(ctx, username, req.Namespace, req.Role)
+	}
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	// Update CSR annotations (preserve groups)
+	newAnn := map[string]string{}
+	if g := csr.Annotations[k8s.AnnotationGroups]; g != "" {
+		newAnn[k8s.AnnotationGroups] = g
+	}
+	if req.ClusterRole != "" {
+		newAnn[k8s.AnnotationClusterRole] = req.ClusterRole
+	}
+	if req.Namespace != "" {
+		newAnn[k8s.AnnotationNamespace] = req.Namespace
+	}
+	if req.Role != "" {
+		newAnn[k8s.AnnotationRole] = req.Role
+	}
+	if advanced {
+		newAnn[k8s.AnnotationCustomRole] = "true"
+	}
+	if err := h.k8s.UpdateCSRAnnotations(ctx, username, newAnn); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
 func (h *Handler) DownloadKubeconfig(c *gin.Context) {
 	username := c.Param("name")
 	ctx := c.Request.Context()

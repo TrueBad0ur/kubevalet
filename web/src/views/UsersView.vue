@@ -60,6 +60,7 @@
               <td class="text-muted text-sm">{{ formatDate(u.createdAt) }}</td>
               <td>
                 <div class="flex gap-2">
+                  <button class="btn btn-ghost btn-sm" @click="openEdit(u)">Edit</button>
                   <button class="btn btn-ghost btn-sm" @click="viewKubeconfig(u.name)" :disabled="viewing === u.name">
                     <span v-if="viewing === u.name" class="spinner" />
                     <span v-else>View</span>
@@ -100,6 +101,105 @@
             Download
           </button>
           <button class="btn btn-ghost" @click="viewTarget = null">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit RBAC modal -->
+    <div v-if="editTarget" class="modal-overlay" @click.self="editTarget = null">
+      <div class="modal" style="max-width:560px">
+        <div class="modal-header">Edit permissions — <strong class="font-mono">{{ editTarget.name }}</strong></div>
+        <div class="modal-body">
+          <div v-if="editError" class="alert alert-error">{{ editError }}</div>
+          <form @submit.prevent="submitEdit">
+
+            <div class="form-group">
+              <label class="form-label">Access scope</label>
+              <div class="radio-group">
+                <label class="radio-option">
+                  <input type="radio" v-model="editBindingType" value="cluster" /> Cluster-wide
+                </label>
+                <label class="radio-option">
+                  <input type="radio" v-model="editBindingType" value="namespace" /> Namespace-scoped
+                </label>
+              </div>
+            </div>
+
+            <div v-if="editBindingType === 'namespace'" class="form-group">
+              <label class="form-label">Namespace <span class="required">*</span></label>
+              <input v-model="editForm.namespace" type="text" class="form-input" placeholder="e.g. default" required />
+            </div>
+
+            <div class="form-group">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                <label class="form-label" style="margin:0">
+                  {{ editAdvanced ? 'Custom rules' : (editBindingType === 'cluster' ? 'Cluster Role' : 'Role') }}
+                  <span v-if="!editAdvanced" class="required">*</span>
+                </label>
+                <button type="button" class="btn btn-ghost btn-sm" style="font-size:12px;padding:2px 8px"
+                  @click="editAdvanced = !editAdvanced">
+                  {{ editAdvanced ? '← Simple' : 'Advanced →' }}
+                </button>
+              </div>
+
+              <template v-if="!editAdvanced">
+                <select v-if="editBindingType === 'cluster'" v-model="editForm.clusterRole" class="form-select" required>
+                  <option value="">— select —</option>
+                  <option value="cluster-admin">cluster-admin</option>
+                  <option value="admin">admin</option>
+                  <option value="edit">edit</option>
+                  <option value="view">view</option>
+                </select>
+                <select v-else v-model="editForm.role" class="form-select" required>
+                  <option value="">— select —</option>
+                  <option value="admin">admin</option>
+                  <option value="edit">edit</option>
+                  <option value="view">view</option>
+                </select>
+              </template>
+
+              <template v-else>
+                <div v-for="(rule, i) in editRules" :key="i" class="rule-card">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                    <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Rule {{ i + 1 }}</span>
+                    <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--danger)"
+                      @click="editRules.splice(i,1)" v-if="editRules.length > 1">×</button>
+                  </div>
+                  <div class="form-group" style="margin-bottom:8px">
+                    <label class="form-label" style="font-size:11px">API Groups <span style="color:var(--text-muted);font-weight:400">(comma-separated; empty = core)</span></label>
+                    <input v-model="rule.apiGroups" type="text" class="form-input" style="font-size:12px;font-family:monospace"
+                      placeholder='e.g. apps, "" for core' />
+                  </div>
+                  <div class="form-group" style="margin-bottom:8px">
+                    <label class="form-label" style="font-size:11px">Resources <span style="color:var(--text-muted);font-weight:400">(comma-separated)</span></label>
+                    <input v-model="rule.resources" type="text" class="form-input" style="font-size:12px;font-family:monospace"
+                      placeholder="e.g. pods, deployments, secrets" required />
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label" style="font-size:11px">Verbs</label>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+                      <label v-for="v in EDIT_VERBS" :key="v" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;user-select:none">
+                        <input type="checkbox" :checked="rule.verbs.includes(v)" @change="editToggleVerb(rule, v)" />
+                        {{ v }}
+                      </label>
+                    </div>
+                    <input v-model="rule.verbCustom" type="text" class="form-input" style="font-size:12px;font-family:monospace"
+                      placeholder="Extra verbs (comma-separated)" />
+                  </div>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:12px"
+                  @click="editRules.push(editEmptyRule())">+ Add rule</button>
+              </template>
+            </div>
+
+            <div class="modal-footer" style="padding:0;border:none;margin-top:4px">
+              <button type="button" class="btn btn-ghost" @click="editTarget = null">Cancel</button>
+              <button type="submit" class="btn btn-primary" :disabled="editSaving">
+                <span v-if="editSaving" class="spinner" />
+                <span v-else>Save</span>
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
@@ -171,11 +271,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listUsers, deleteUser, type User } from '@/api/users'
+import { listUsers, deleteUser, updateUserRBAC, type User } from '@/api/users'
 import { client } from '@/api/client'
+
+const EDIT_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
+
+interface RuleDraft { apiGroups: string; resources: string; verbs: string[]; verbCustom: string }
+
+function editEmptyRule(): RuleDraft {
+  return { apiGroups: '', resources: '', verbs: [], verbCustom: '' }
+}
+
+function draftToRule(r: RuleDraft) {
+  return {
+    apiGroups: r.apiGroups ? r.apiGroups.split(',').map(s => s.trim()) : [''],
+    resources: r.resources.split(',').map(s => s.trim()).filter(Boolean),
+    verbs: [...new Set([...r.verbs, ...r.verbCustom.split(',').map(s => s.trim()).filter(Boolean)])],
+  }
+}
+
+function ruleToDraft(r: { apiGroups: string[]; resources: string[]; verbs: string[] }): RuleDraft {
+  const coreOnly = r.apiGroups.length === 1 && r.apiGroups[0] === ''
+  return {
+    apiGroups: coreOnly ? '' : r.apiGroups.join(', '),
+    resources: r.resources.join(', '),
+    verbs: r.verbs.filter(v => EDIT_VERBS.includes(v)),
+    verbCustom: r.verbs.filter(v => !EDIT_VERBS.includes(v)).join(', '),
+  }
+}
+
+function editToggleVerb(rule: RuleDraft, verb: string) {
+  const idx = rule.verbs.indexOf(verb)
+  if (idx === -1) rule.verbs.push(verb)
+  else rule.verbs.splice(idx, 1)
+}
 
 const users       = ref<User[]>([])
 const loading     = ref(true)
@@ -188,6 +320,51 @@ const viewTarget  = ref<string | null>(null)
 const viewContent = ref('')
 const viewCopied  = ref(false)
 const rulesTarget = ref<User | null>(null)
+
+const editTarget      = ref<User | null>(null)
+const editBindingType = ref<'cluster' | 'namespace'>('cluster')
+const editAdvanced    = ref(false)
+const editForm        = reactive({ clusterRole: '', namespace: '', role: '' })
+const editRules       = ref<RuleDraft[]>([editEmptyRule()])
+const editSaving      = ref(false)
+const editError       = ref('')
+
+function openEdit(u: User) {
+  editTarget.value      = u
+  editError.value       = ''
+  editAdvanced.value    = !!u.customRole
+  editBindingType.value = u.namespace ? 'namespace' : 'cluster'
+  editForm.clusterRole  = u.clusterRole ?? ''
+  editForm.namespace    = u.namespace ?? ''
+  editForm.role         = u.role ?? ''
+  editRules.value       = u.rules?.length ? u.rules.map(ruleToDraft) : [editEmptyRule()]
+}
+
+async function submitEdit() {
+  if (!editTarget.value) return
+  editError.value  = ''
+  editSaving.value = true
+  try {
+    let payload
+    if (editAdvanced.value) {
+      payload = {
+        rules: editRules.value.map(draftToRule),
+        ...(editBindingType.value === 'namespace' ? { namespace: editForm.namespace } : {}),
+      }
+    } else if (editBindingType.value === 'cluster') {
+      payload = { clusterRole: editForm.clusterRole }
+    } else {
+      payload = { namespace: editForm.namespace, role: editForm.role }
+    }
+    await updateUserRBAC(editTarget.value.name, payload)
+    editTarget.value = null
+    await load()
+  } catch (e: any) {
+    editError.value = e.response?.data?.error ?? 'Failed to update permissions'
+  } finally {
+    editSaving.value = false
+  }
+}
 
 async function load() {
   loading.value = true

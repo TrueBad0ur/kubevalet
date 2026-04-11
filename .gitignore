@@ -15,6 +15,7 @@ web/node_modules/
 # real build output overwrites it in Docker / CI
 
 # IDE
+PLAN.md
 .idea/
 .vscode/
 *.swp
