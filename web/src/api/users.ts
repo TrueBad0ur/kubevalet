@@ -70,3 +70,8 @@ export async function deleteUser(name: string): Promise<void> {
 export function kubeconfigUrl(name: string): string {
   return `/api/v1/users/${name}/kubeconfig`
 }
+
+export async function syncUser(name: string): Promise<{ repaired: string[] }> {
+  const res = await client.post<{ repaired: string[] }>(`/users/${name}/sync`)
+  return res.data
+}

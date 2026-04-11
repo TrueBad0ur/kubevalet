@@ -81,6 +81,11 @@
                       kubeconfig
                     </template>
                   </button>
+                  <button class="btn btn-ghost btn-sm" @click="doSync(u.name)" :disabled="syncing === u.name"
+                    title="Recreate missing k8s objects from database">
+                    <span v-if="syncing === u.name" class="spinner" />
+                    <span v-else>Sync</span>
+                  </button>
                   <button class="btn btn-danger btn-sm" @click="confirmDelete(u.name)" :disabled="deleting === u.name">
                     <span v-if="deleting === u.name" class="spinner" />
                     <span v-else>Delete</span>
@@ -370,7 +375,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listUsers, deleteUser, updateUserRBAC, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
+import { listUsers, deleteUser, updateUserRBAC, syncUser, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
 import { client } from '@/api/client'
 
 const EDIT_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
@@ -409,6 +414,22 @@ const users       = ref<User[]>([])
 const loading     = ref(true)
 const error       = ref('')
 const deleting    = ref('')
+const syncing     = ref('')
+
+async function doSync(name: string) {
+  syncing.value = name
+  try {
+    const res = await syncUser(name)
+    const repaired = res.repaired?.join(', ') || 'nothing missing'
+    editSuccessMsg.value = `Sync ${name}: ${repaired}`
+    setTimeout(() => { editSuccessMsg.value = '' }, 4000)
+  } catch (e: any) {
+    error.value = e.response?.data?.error ?? 'Sync failed'
+    setTimeout(() => { error.value = '' }, 4000)
+  } finally {
+    syncing.value = ''
+  }
+}
 
 const sortKey = ref<'name' | 'createdAt'>('name')
 const sortDir = ref<'asc' | 'desc'>('asc')

@@ -28,7 +28,51 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		)
 	`)
 	if err != nil {
-		return fmt.Errorf("migrate: %w", err)
+		return fmt.Errorf("migrate admin_users: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS groups (
+			id           BIGSERIAL    PRIMARY KEY,
+			name         VARCHAR(255) UNIQUE NOT NULL,
+			description  TEXT         NOT NULL DEFAULT '',
+			cluster_role VARCHAR(255) NOT NULL DEFAULT '',
+			custom_role  BOOLEAN      NOT NULL DEFAULT FALSE,
+			rules        JSONB        NOT NULL DEFAULT '[]',
+			ns_bindings  JSONB        NOT NULL DEFAULT '[]',
+			created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate groups: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS app_settings (
+			key   VARCHAR(255) PRIMARY KEY,
+			value TEXT         NOT NULL DEFAULT ''
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate app_settings: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS users (
+			id              BIGSERIAL    PRIMARY KEY,
+			name            VARCHAR(255) UNIQUE NOT NULL,
+			groups          TEXT[]       NOT NULL DEFAULT '{}',
+			cluster_role    VARCHAR(255) NOT NULL DEFAULT '',
+			custom_role     BOOLEAN      NOT NULL DEFAULT FALSE,
+			rules           JSONB        NOT NULL DEFAULT '[]',
+			ns_bindings     JSONB        NOT NULL DEFAULT '[]',
+			cert_pem        TEXT         NOT NULL DEFAULT '',
+			private_key_pem TEXT         NOT NULL DEFAULT '',
+			created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate users: %w", err)
 	}
 	return nil
 }

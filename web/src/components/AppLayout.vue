@@ -15,6 +15,16 @@
           Users
         </RouterLink>
 
+        <RouterLink to="/groups" :class="{ active: route.path === '/groups' }">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"/></svg>
+          Groups
+        </RouterLink>
+
+        <RouterLink to="/graph" :class="{ active: route.path === '/graph' }">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 2a1 1 0 00-1 1v1H3a1 1 0 000 2h1v1a1 1 0 002 0V6h1a1 1 0 000-2H6V3a1 1 0 00-1-1zm9 0a1 1 0 00-1 1v1h-1a1 1 0 000 2h1v1a1 1 0 002 0V6h1a1 1 0 000-2h-1V3a1 1 0 00-1-1zM5 12a1 1 0 00-1 1v1H3a1 1 0 000 2h1v1a1 1 0 002 0v-1h1a1 1 0 000-2H6v-1a1 1 0 00-1-1zm7 1a1 1 0 012 0v1h1a1 1 0 010 2h-1v1a1 1 0 01-2 0v-1h-1a1 1 0 010-2h1v-1z" clip-rule="evenodd"/></svg>
+          Graph
+        </RouterLink>
+
         <div class="sidebar-divider"></div>
 
         <RouterLink to="/settings" :class="{ active: route.path === '/settings' }">

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -36,8 +37,14 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.PUT("/users/:name/rbac", h.UpdateUserRBAC)
 	protected.DELETE("/users/:name", h.DeleteUser)
 	protected.GET("/users/:name/kubeconfig", h.DownloadKubeconfig)
+	protected.POST("/users/:name/sync", h.SyncUser)
 	protected.GET("/settings", h.GetSettings)
+	protected.PUT("/settings", h.UpdateSettings)
 	protected.PUT("/settings/password", h.ChangePassword)
+	protected.GET("/groups", h.ListGroups)
+	protected.POST("/groups", h.CreateGroup)
+	protected.PUT("/groups/:name", h.UpdateGroup)
+	protected.DELETE("/groups/:name", h.DeleteGroup)
 }
 
 type errorResponse struct {
@@ -48,7 +55,14 @@ func respondError(c *gin.Context, status int, err error) {
 	c.JSON(status, errorResponse{Error: err.Error()})
 }
 
-func (h *Handler) clusterServer() string {
+// clusterServer returns the API server address for kubeconfig generation.
+// Priority: DB setting > env/config > in-cluster rest host.
+func (h *Handler) clusterServer(ctx context.Context) string {
+	var val string
+	_ = h.db.QueryRow(ctx, "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&val)
+	if val != "" {
+		return val
+	}
 	if h.cfg.ClusterServer != "" {
 		return h.cfg.ClusterServer
 	}

@@ -2,9 +2,10 @@ package k8s
 
 const (
 	// Labels
-	LabelManagedBy = "app.kubernetes.io/managed-by"
+	LabelManagedBy      = "app.kubernetes.io/managed-by"
 	LabelManagedByValue = "kubevalet"
-	LabelUsername  = "kubevalet.io/username"
+	LabelUsername       = "kubevalet.io/username"
+	LabelGroup          = "kubevalet.io/group"
 
 	// Annotations — stored on the CSR to reconstruct User on list
 	AnnotationGroups      = "kubevalet.io/groups"
@@ -15,9 +16,14 @@ const (
 	AnnotationNamespaceBindings = "kubevalet.io/namespace-bindings"  // JSON array of {namespace,role?,customRole?}
 
 	// Naming prefix for all managed k8s objects
-	ResourcePrefix = "kubevalet-"
+	ResourcePrefix      = "kubevalet-"
+	ResourceGroupPrefix = "kubevalet-group-"
 )
 
 func resourceName(username string) string {
 	return ResourcePrefix + username
+}
+
+func groupResourceName(groupName string) string {
+	return ResourceGroupPrefix + groupName
 }

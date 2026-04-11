@@ -11,9 +11,34 @@ import (
 )
 
 func (h *Handler) GetSettings(c *gin.Context) {
+	var clusterServer string
+	_ = h.db.QueryRow(c.Request.Context(), "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&clusterServer)
 	c.JSON(http.StatusOK, gin.H{
-		"version": version.Version,
+		"version":       version.Version,
+		"clusterServer": clusterServer,
 	})
+}
+
+type updateSettingsRequest struct {
+	ClusterServer string `json:"clusterServer"`
+}
+
+func (h *Handler) UpdateSettings(c *gin.Context) {
+	var req updateSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
+
+	_, err := h.db.Exec(c.Request.Context(), `
+		INSERT INTO app_settings (key, value) VALUES ('cluster_server', $1)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+	`, req.ClusterServer)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, fmt.Errorf("save setting: %w", err))
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 type changePasswordRequest struct {

@@ -19,7 +19,7 @@
             </div>
 
             <!-- Groups -->
-            <div class="form-group">
+            <div class="form-group" style="position:relative">
               <label class="form-label">Groups</label>
               <div class="tags-input" @click="focusGroupInput">
                 <span v-for="g in form.groups" :key="g" class="tag">
@@ -30,11 +30,32 @@
                   ref="groupInput"
                   v-model="groupDraft"
                   type="text"
-                  placeholder="Type and press Enter…"
-                  @keydown.enter.prevent="addGroup"
+                  placeholder="Type or select…"
+                  autocomplete="off"
+                  @keydown.enter.prevent="dropdownActive >= 0 ? pickSuggestion(groupSuggestions[dropdownActive]) : addGroup()"
+                  @keydown.tab.prevent="dropdownActive >= 0 ? pickSuggestion(groupSuggestions[dropdownActive]) : addGroup()"
                   @keydown.backspace="onBackspace"
                   @keydown.comma.prevent="addGroup"
+                  @keydown.arrow-down.prevent="dropdownActive = Math.min(dropdownActive + 1, groupSuggestions.length - 1)"
+                  @keydown.arrow-up.prevent="dropdownActive = Math.max(dropdownActive - 1, 0)"
+                  @keydown.escape="groupDraft = ''"
+                  @blur="onGroupBlur"
+                  @focus="groupFocused = true; dropdownActive = -1"
                 />
+              </div>
+              <!-- suggestions dropdown -->
+              <div v-if="groupSuggestions.length" class="group-suggestions">
+                <button
+                  v-for="(g, i) in groupSuggestions" :key="g.name"
+                  type="button"
+                  class="group-suggestion-item"
+                  :class="{ active: i === dropdownActive }"
+                  @mousedown.prevent="pickSuggestion(g)"
+                >
+                  <span class="font-mono" style="font-size:13px;font-weight:600">{{ g.name }}</span>
+                  <span v-if="g.description" class="text-muted text-sm" style="margin-left:8px">{{ g.description }}</span>
+                  <span v-if="form.groups.includes(g.name)" class="badge badge-success" style="margin-left:auto;font-size:10px">added</span>
+                </button>
               </div>
               <p class="form-hint">Maps to O in the cert. Used in RBAC group bindings.</p>
             </div>
@@ -213,10 +234,13 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { createUser, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
+import { listGroups, type Group } from '@/api/groups'
+
+
 
 const COMMON_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
 
@@ -282,12 +306,28 @@ function toggleVerb(rule: RuleDraft, verb: string) {
   if (idx === -1) rule.verbs.push(verb)
   else rule.verbs.splice(idx, 1)
 }
-const groupDraft  = ref('')
-const groupInput  = ref<HTMLInputElement | null>(null)
-const loading     = ref(false)
-const error       = ref('')
-const result      = ref<CreateUserResponse | null>(null)
-const copied      = ref(false)
+const groupDraft      = ref('')
+const groupInput      = ref<HTMLInputElement | null>(null)
+const loading         = ref(false)
+const error           = ref('')
+const result          = ref<CreateUserResponse | null>(null)
+const copied          = ref(false)
+const availableGroups = ref<Group[]>([])
+const dropdownActive  = ref(-1)
+
+const groupFocused = ref(false)
+
+const groupSuggestions = computed(() => {
+  if (!groupFocused.value || !availableGroups.value.length) return []
+  const q = groupDraft.value.trim().toLowerCase()
+  return availableGroups.value.filter(g =>
+    !q || g.name.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q)
+  )
+})
+
+onMounted(async () => {
+  try { availableGroups.value = await listGroups() } catch { /* ignore */ }
+})
 
 function focusGroupInput() { groupInput.value?.focus() }
 
@@ -295,6 +335,22 @@ function addGroup() {
   const val = groupDraft.value.trim()
   if (val && !form.groups.includes(val)) form.groups.push(val)
   groupDraft.value = ''
+  dropdownActive.value = -1
+}
+
+function pickSuggestion(g: Group) {
+  if (!form.groups.includes(g.name)) form.groups.push(g.name)
+  groupDraft.value = ''
+  dropdownActive.value = -1
+  groupInput.value?.focus()
+}
+
+function onGroupBlur() {
+  // small delay so mousedown on suggestion fires first
+  setTimeout(() => {
+    groupFocused.value = false
+    addGroup()
+  }, 150)
 }
 
 function removeGroup(g: string) {
@@ -306,6 +362,7 @@ function onBackspace() {
 }
 
 async function submit() {
+  addGroup() // flush any pending draft
   error.value = ''
   loading.value = true
   try {
