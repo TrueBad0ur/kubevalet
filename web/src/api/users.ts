@@ -1,0 +1,51 @@
+import { client } from './client'
+
+export interface PolicyRule {
+  apiGroups: string[]
+  resources: string[]
+  verbs: string[]
+}
+
+export interface User {
+  name: string
+  groups?: string[]
+  clusterRole?: string
+  namespace?: string
+  role?: string
+  customRole?: boolean
+  rules?: PolicyRule[]
+  status: string
+  createdAt: string
+}
+
+export interface CreateUserRequest {
+  name: string
+  groups: string[]
+  clusterRole?: string
+  namespace?: string
+  role?: string
+  rules?: PolicyRule[]
+}
+
+export interface CreateUserResponse {
+  user: User
+  kubeconfig: string
+}
+
+export async function listUsers(): Promise<User[]> {
+  const res = await client.get<{ users: User[]; total: number }>('/users')
+  return res.data.users ?? []
+}
+
+export async function createUser(req: CreateUserRequest): Promise<CreateUserResponse> {
+  const res = await client.post<CreateUserResponse>('/users', req)
+  return res.data
+}
+
+export async function deleteUser(name: string): Promise<void> {
+  await client.delete(`/users/${name}`)
+}
+
+export function kubeconfigUrl(name: string): string {
+  return `/api/v1/users/${name}/kubeconfig`
+}

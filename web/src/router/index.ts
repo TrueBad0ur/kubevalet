@@ -1,0 +1,28 @@
+import { createRouter, createWebHistory, type RouteLocationRaw } from 'vue-router'
+import LoginView from '@/views/LoginView.vue'
+import UsersView from '@/views/UsersView.vue'
+import CreateUserView from '@/views/CreateUserView.vue'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    public?: boolean
+  }
+}
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    { path: '/login',     component: LoginView,      meta: { public: true } },
+    { path: '/',          component: UsersView },
+    { path: '/users/new', component: CreateUserView },
+    { path: '/:pathMatch(.*)*', redirect: '/' },
+  ],
+})
+
+router.beforeEach((to): RouteLocationRaw | void => {
+  const token = localStorage.getItem('token')
+  if (!to.meta.public && !token) return '/login'
+  if (to.path === '/login' && token) return '/'
+})
+
+export default router

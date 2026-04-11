@@ -1,0 +1,31 @@
+# Git
+.git/
+.gitignore
+
+# Go build artifacts
+bin/
+dist/
+*.test
+*.out
+vendor/
+
+# Frontend deps (built inside Docker)
+web/node_modules/
+
+# IDE
+.idea/
+.vscode/
+
+# Secrets / local config
+.env
+*.env
+kubeconfig
+*.kubeconfig
+
+# Helm (not needed in image)
+charts/
+
+# Docs
+*.md
+PLAN.md
+LICENSE
