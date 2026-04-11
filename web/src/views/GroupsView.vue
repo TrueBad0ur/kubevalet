@@ -41,8 +41,9 @@
               <td class="text-muted text-sm">{{ fmtDate(g.createdAt) }}</td>
               <td style="text-align:right;white-space:nowrap">
                 <button class="btn btn-ghost btn-sm" style="margin-right:4px" @click="openEdit(g)">Edit</button>
-                <button class="btn btn-ghost btn-sm" style="margin-right:4px" @click="doSync(g.name)"
-                  :disabled="syncing === g.name" title="Recreate missing k8s objects from database">
+                <button v-if="g.clusterRole || g.customRole || g.namespaceBindings?.length"
+                  class="btn btn-ghost btn-sm" style="margin-right:4px" @click="doSync(g.name)"
+                  :disabled="syncing === g.name" title="Recreate missing k8s RBAC objects from database">
                   <span v-if="syncing === g.name" class="spinner" />
                   <span v-else>Sync</span>
                 </button>

@@ -8,8 +8,13 @@ Creates x509 users via the Kubernetes CSR API, issues kubeconfigs, and manages R
 
 - Create Kubernetes users (x509 / CSR API)
 - Assign preset roles (`cluster-admin`, `admin`, `edit`, `view`) or define custom RBAC rules (API groups, resources, verbs)
+- Multi-namespace scoped bindings per user
+- **Groups** — manage k8s Group subjects with their own RBAC; users added to a group via x509 O field inherit permissions automatically
 - Download / view generated kubeconfigs
-- Private keys stored in cluster Secrets — never logged or exposed raw
+- **Graph view** — visualise any user's full access tree: cluster-wide role and per-namespace bindings
+- **PostgreSQL as source of truth** — all user state (RBAC config, cert PEM, private key) stored in postgres; **Sync** button recreates any missing k8s objects from DB
+- Kubeconfig API server address configurable at runtime from the Settings UI (no redeploy needed)
+- Private keys stored in cluster Secrets and postgres — never logged or exposed raw
 - Simple username/password auth backed by PostgreSQL
 
 ## Structure
@@ -85,8 +90,8 @@ kubectl port-forward svc/kubevalet 8080:80 -n kubevalet
 
 | Value | Default | Description |
 |---|---|---|
-| `image.tag` | `0.1.6` | Image tag |
-| `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to |
+| `image.tag` | `0.2.7` | Image tag |
+| `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to (can also be changed at runtime in Settings UI) |
 | `cluster.name` | `kubernetes` | Cluster name in kubeconfig context |
 | `auth.adminPassword` | `admin` | Initial admin password |
 | `auth.jwtSecret` | _(auto-generated)_ | JWT signing secret — auto-generated on first install, preserved across upgrades |

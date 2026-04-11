@@ -241,6 +241,13 @@ func (h *Handler) SyncGroup(c *gin.Context) {
 	_ = json.Unmarshal(rulesJSON, &rules)
 	_ = json.Unmarshal(nsJSON, &nsBindings)
 
+	// Nothing to sync if no RBAC is configured for this group
+	hasRBAC := clusterRole != "" || (customRole && len(nsBindings) == 0) || len(nsBindings) > 0
+	if !hasRBAC {
+		c.JSON(http.StatusOK, gin.H{"repaired": []string{}})
+		return
+	}
+
 	// Delete existing then recreate from DB
 	var errs []string
 	collect := func(e error) {
