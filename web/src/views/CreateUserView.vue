@@ -44,28 +44,21 @@
               <label class="form-label">Access scope <span class="required">*</span></label>
               <div class="radio-group">
                 <label class="radio-option">
-                  <input type="radio" v-model="bindingType" value="cluster" />
+                  <input type="radio" v-model="bindingType" value="cluster" @change="advanced = false" />
                   Cluster-wide
                 </label>
                 <label class="radio-option">
-                  <input type="radio" v-model="bindingType" value="namespace" />
+                  <input type="radio" v-model="bindingType" value="namespace" @change="advanced = false" />
                   Namespace-scoped
                 </label>
               </div>
             </div>
 
-            <!-- Namespace (always shown for namespace scope) -->
-            <div v-if="bindingType === 'namespace'" class="form-group">
-              <label class="form-label">Namespace <span class="required">*</span></label>
-              <input v-model="form.namespace" type="text" class="form-input"
-                placeholder="e.g. default" required />
-            </div>
-
-            <!-- Simple role / Advanced toggle -->
-            <div class="form-group">
+            <!-- Cluster role / advanced -->
+            <div v-if="bindingType === 'cluster'" class="form-group">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
                 <label class="form-label" style="margin:0">
-                  {{ advanced ? 'Custom rules' : (bindingType === 'cluster' ? 'Cluster Role' : 'Role') }}
+                  {{ advanced ? 'Custom rules' : 'Cluster Role' }}
                   <span v-if="!advanced" class="required">*</span>
                 </label>
                 <button type="button" class="btn btn-ghost btn-sm" style="font-size:12px;padding:2px 8px"
@@ -73,18 +66,10 @@
                   {{ advanced ? '← Simple' : 'Advanced →' }}
                 </button>
               </div>
-
-              <!-- Simple role select -->
               <template v-if="!advanced">
-                <select v-if="bindingType === 'cluster'" v-model="form.clusterRole" class="form-select" required>
+                <select v-model="form.clusterRole" class="form-select" required>
                   <option value="">— select —</option>
                   <option value="cluster-admin">cluster-admin</option>
-                  <option value="admin">admin</option>
-                  <option value="edit">edit</option>
-                  <option value="view">view</option>
-                </select>
-                <select v-else v-model="form.role" class="form-select" required>
-                  <option value="">— select —</option>
                   <option value="admin">admin</option>
                   <option value="edit">edit</option>
                   <option value="view">view</option>
@@ -126,6 +111,68 @@
                 </button>
               </template>
             </div>
+
+            <!-- Namespace bindings (multi) -->
+            <template v-if="bindingType === 'namespace'">
+              <div v-for="(nb, ni) in nsBindings" :key="ni" class="rule-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                  <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Namespace binding {{ ni + 1 }}</span>
+                  <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--danger)"
+                    @click="nsBindings.splice(ni,1)" v-if="nsBindings.length > 1">×</button>
+                </div>
+                <div class="form-group" style="margin-bottom:8px">
+                  <label class="form-label" style="font-size:11px">Namespace <span class="required">*</span></label>
+                  <input v-model="nb.namespace" type="text" class="form-input" placeholder="e.g. default" required />
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <label class="form-label" style="font-size:11px;margin:0">
+                      {{ nb.advanced ? 'Custom rules' : 'Role' }}
+                      <span v-if="!nb.advanced" class="required">*</span>
+                    </label>
+                    <button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px"
+                      @click="nb.advanced = !nb.advanced">
+                      {{ nb.advanced ? '← Simple' : 'Advanced →' }}
+                    </button>
+                  </div>
+                  <select v-if="!nb.advanced" v-model="nb.role" class="form-select" required>
+                    <option value="">— select —</option>
+                    <option value="admin">admin</option>
+                    <option value="edit">edit</option>
+                    <option value="view">view</option>
+                  </select>
+                  <template v-else>
+                    <div v-for="(rule, ri) in nb.rules" :key="ri" class="rule-card" style="margin-bottom:8px;background:var(--bg)">
+                      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                        <span style="font-size:11px;font-weight:600;color:var(--text-muted)">Rule {{ ri + 1 }}</span>
+                        <button type="button" class="btn btn-ghost btn-sm" style="padding:1px 5px;color:var(--danger)"
+                          @click="nb.rules.splice(ri,1)" v-if="nb.rules.length > 1">×</button>
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label class="form-label" style="font-size:11px">API Groups</label>
+                        <input v-model="rule.apiGroups" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder='e.g. apps' />
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label class="form-label" style="font-size:11px">Resources</label>
+                        <input v-model="rule.resources" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder="e.g. pods, deployments" required />
+                      </div>
+                      <div class="form-group" style="margin-bottom:0">
+                        <label class="form-label" style="font-size:11px">Verbs</label>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+                          <label v-for="v in COMMON_VERBS" :key="v" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                            <input type="checkbox" :checked="rule.verbs.includes(v)" @change="toggleVerb(rule, v)" />{{ v }}
+                          </label>
+                        </div>
+                        <input v-model="rule.verbCustom" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder="Extra verbs (comma-separated)" />
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-sm" style="font-size:11px" @click="nb.rules.push(emptyRule())">+ Add rule</button>
+                  </template>
+                </div>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" style="margin-bottom:16px;font-size:12px"
+                @click="nsBindings.push(emptyNsBinding())">+ Add namespace binding</button>
+            </template>
 
             <button type="submit" class="btn btn-primary" :disabled="loading">
               <span v-if="loading" class="spinner" />
@@ -169,7 +216,7 @@
 import { reactive, ref, computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { createUser, type CreateUserResponse, type PolicyRule } from '@/api/users'
+import { createUser, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
 
 const COMMON_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
 
@@ -180,8 +227,19 @@ interface RuleDraft {
   verbCustom: string
 }
 
+interface NsBindingDraft {
+  namespace: string
+  role: string
+  advanced: boolean
+  rules: RuleDraft[]
+}
+
 function emptyRule(): RuleDraft {
   return { apiGroups: '', resources: '', verbs: [], verbCustom: '' }
+}
+
+function emptyNsBinding(): NsBindingDraft {
+  return { namespace: '', role: '', advanced: false, rules: [emptyRule()] }
 }
 
 function draftToRule(r: RuleDraft): PolicyRule {
@@ -205,12 +263,13 @@ const form = reactive({
 const bindingType = ref<'cluster' | 'namespace'>('cluster')
 const advanced    = ref(false)
 const rules       = ref<RuleDraft[]>([emptyRule()])
+const nsBindings  = ref<NsBindingDraft[]>([emptyNsBinding()])
 
 function toggleAdvanced() {
+  if (bindingType.value !== 'cluster') return
   advanced.value = !advanced.value
   if (advanced.value) {
     form.clusterRole = ''
-    form.role = ''
     rules.value = [emptyRule()]
   }
 }
@@ -251,20 +310,24 @@ async function submit() {
   loading.value = true
   try {
     let payload
-    if (advanced.value) {
+    if (bindingType.value === 'cluster') {
       payload = {
         name: form.name,
         groups: form.groups,
-        rules: rules.value.map(draftToRule),
-        ...(bindingType.value === 'namespace' ? { namespace: form.namespace } : {}),
+        ...(advanced.value
+          ? { rules: rules.value.map(draftToRule) }
+          : { clusterRole: form.clusterRole }),
       }
     } else {
       payload = {
         name: form.name,
         groups: form.groups,
-        ...(bindingType.value === 'cluster'
-          ? { clusterRole: form.clusterRole }
-          : { namespace: form.namespace, role: form.role }),
+        namespaceBindings: nsBindings.value.map(nb => ({
+          namespace: nb.namespace,
+          ...(nb.advanced
+            ? { rules: nb.rules.map(draftToRule) }
+            : { role: nb.role }),
+        })) as NamespaceBinding[],
       }
     }
     result.value = await createUser(payload)

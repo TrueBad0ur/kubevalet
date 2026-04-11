@@ -42,16 +42,20 @@
                 <span v-else class="text-muted text-sm">—</span>
               </td>
               <td>
-                <span v-if="u.customRole && !u.namespace" class="badge badge-gray"
-                  style="cursor:pointer" @click="rulesTarget = u" title="Click to view rules">
+                <span v-if="u.customRole" class="badge badge-gray"
+                  style="cursor:pointer" @click="openClusterRules(u)" title="Click to view rules">
                   cluster / custom ▾
                 </span>
-                <span v-else-if="u.customRole && u.namespace" class="badge badge-gray"
-                  style="cursor:pointer" @click="rulesTarget = u" title="Click to view rules">
-                  {{ u.namespace }} / custom ▾
-                </span>
                 <span v-else-if="u.clusterRole" class="badge badge-gray">cluster / {{ u.clusterRole }}</span>
-                <span v-else-if="u.namespace" class="badge badge-gray">{{ u.namespace }} / {{ u.role }}</span>
+                <div v-else-if="u.namespaceBindings?.length" class="flex gap-1" style="flex-wrap:wrap">
+                  <span v-for="nb in u.namespaceBindings" :key="nb.namespace"
+                    class="badge badge-gray"
+                    :style="nb.customRole ? 'cursor:pointer' : ''"
+                    @click="nb.customRole && openNsRules(u, nb)"
+                    :title="nb.customRole ? 'Click to view rules' : undefined">
+                    {{ nb.namespace }} / {{ nb.customRole ? 'custom ▾' : nb.role }}
+                  </span>
+                </div>
                 <span v-else class="text-muted text-sm">—</span>
               </td>
               <td>
@@ -125,15 +129,11 @@
               </div>
             </div>
 
-            <div v-if="editBindingType === 'namespace'" class="form-group">
-              <label class="form-label">Namespace <span class="required">*</span></label>
-              <input v-model="editForm.namespace" type="text" class="form-input" placeholder="e.g. default" required />
-            </div>
-
-            <div class="form-group">
+            <!-- Cluster role section -->
+            <div v-if="editBindingType === 'cluster'" class="form-group">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
                 <label class="form-label" style="margin:0">
-                  {{ editAdvanced ? 'Custom rules' : (editBindingType === 'cluster' ? 'Cluster Role' : 'Role') }}
+                  {{ editAdvanced ? 'Custom rules' : 'Cluster Role' }}
                   <span v-if="!editAdvanced" class="required">*</span>
                 </label>
                 <button type="button" class="btn btn-ghost btn-sm" style="font-size:12px;padding:2px 8px"
@@ -141,23 +141,15 @@
                   {{ editAdvanced ? '← Simple' : 'Advanced →' }}
                 </button>
               </div>
-
               <template v-if="!editAdvanced">
-                <select v-if="editBindingType === 'cluster'" v-model="editForm.clusterRole" class="form-select" required>
+                <select v-model="editForm.clusterRole" class="form-select" required>
                   <option value="">— select —</option>
                   <option value="cluster-admin">cluster-admin</option>
                   <option value="admin">admin</option>
                   <option value="edit">edit</option>
                   <option value="view">view</option>
                 </select>
-                <select v-else v-model="editForm.role" class="form-select" required>
-                  <option value="">— select —</option>
-                  <option value="admin">admin</option>
-                  <option value="edit">edit</option>
-                  <option value="view">view</option>
-                </select>
               </template>
-
               <template v-else>
                 <div v-for="(rule, i) in editRules" :key="i" class="rule-card">
                   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -166,31 +158,90 @@
                       @click="editRules.splice(i,1)" v-if="editRules.length > 1">×</button>
                   </div>
                   <div class="form-group" style="margin-bottom:8px">
-                    <label class="form-label" style="font-size:11px">API Groups <span style="color:var(--text-muted);font-weight:400">(comma-separated; empty = core)</span></label>
-                    <input v-model="rule.apiGroups" type="text" class="form-input" style="font-size:12px;font-family:monospace"
-                      placeholder='e.g. apps, "" for core' />
+                    <label class="form-label" style="font-size:11px">API Groups</label>
+                    <input v-model="rule.apiGroups" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder='e.g. apps' />
                   </div>
                   <div class="form-group" style="margin-bottom:8px">
-                    <label class="form-label" style="font-size:11px">Resources <span style="color:var(--text-muted);font-weight:400">(comma-separated)</span></label>
-                    <input v-model="rule.resources" type="text" class="form-input" style="font-size:12px;font-family:monospace"
-                      placeholder="e.g. pods, deployments, secrets" required />
+                    <label class="form-label" style="font-size:11px">Resources</label>
+                    <input v-model="rule.resources" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder="e.g. pods, deployments" required />
                   </div>
                   <div class="form-group" style="margin-bottom:0">
                     <label class="form-label" style="font-size:11px">Verbs</label>
                     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
-                      <label v-for="v in EDIT_VERBS" :key="v" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;user-select:none">
-                        <input type="checkbox" :checked="rule.verbs.includes(v)" @change="editToggleVerb(rule, v)" />
-                        {{ v }}
+                      <label v-for="v in EDIT_VERBS" :key="v" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                        <input type="checkbox" :checked="rule.verbs.includes(v)" @change="editToggleVerb(rule, v)" />{{ v }}
                       </label>
                     </div>
-                    <input v-model="rule.verbCustom" type="text" class="form-input" style="font-size:12px;font-family:monospace"
-                      placeholder="Extra verbs (comma-separated)" />
+                    <input v-model="rule.verbCustom" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder="Extra verbs (comma-separated)" />
                   </div>
                 </div>
                 <button type="button" class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:12px"
                   @click="editRules.push(editEmptyRule())">+ Add rule</button>
               </template>
             </div>
+
+            <!-- Namespace bindings section -->
+            <template v-if="editBindingType === 'namespace'">
+              <div v-for="(nb, ni) in editNsBindings" :key="ni" class="rule-card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+                  <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Namespace binding {{ ni + 1 }}</span>
+                  <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--danger)"
+                    @click="editNsBindings.splice(ni,1)" v-if="editNsBindings.length > 1">×</button>
+                </div>
+                <div class="form-group" style="margin-bottom:8px">
+                  <label class="form-label" style="font-size:11px">Namespace <span class="required">*</span></label>
+                  <input v-model="nb.namespace" type="text" class="form-input" placeholder="e.g. default" required />
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <label class="form-label" style="font-size:11px;margin:0">
+                      {{ nb.advanced ? 'Custom rules' : 'Role' }}
+                      <span v-if="!nb.advanced" class="required">*</span>
+                    </label>
+                    <button type="button" class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px"
+                      @click="nb.advanced = !nb.advanced">
+                      {{ nb.advanced ? '← Simple' : 'Advanced →' }}
+                    </button>
+                  </div>
+                  <select v-if="!nb.advanced" v-model="nb.role" class="form-select" required>
+                    <option value="">— select —</option>
+                    <option value="admin">admin</option>
+                    <option value="edit">edit</option>
+                    <option value="view">view</option>
+                  </select>
+                  <template v-else>
+                    <div v-for="(rule, ri) in nb.rules" :key="ri" class="rule-card" style="margin-bottom:8px;background:var(--bg)">
+                      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                        <span style="font-size:11px;font-weight:600;color:var(--text-muted)">Rule {{ ri + 1 }}</span>
+                        <button type="button" class="btn btn-ghost btn-sm" style="padding:1px 5px;color:var(--danger)"
+                          @click="nb.rules.splice(ri,1)" v-if="nb.rules.length > 1">×</button>
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label class="form-label" style="font-size:11px">API Groups</label>
+                        <input v-model="rule.apiGroups" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder='e.g. apps' />
+                      </div>
+                      <div class="form-group" style="margin-bottom:6px">
+                        <label class="form-label" style="font-size:11px">Resources</label>
+                        <input v-model="rule.resources" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder="e.g. pods, deployments" required />
+                      </div>
+                      <div class="form-group" style="margin-bottom:0">
+                        <label class="form-label" style="font-size:11px">Verbs</label>
+                        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">
+                          <label v-for="v in EDIT_VERBS" :key="v" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer">
+                            <input type="checkbox" :checked="rule.verbs.includes(v)" @change="editToggleVerb(rule, v)" />{{ v }}
+                          </label>
+                        </div>
+                        <input v-model="rule.verbCustom" type="text" class="form-input" style="font-size:12px;font-family:monospace" placeholder="Extra verbs (comma-separated)" />
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-sm" style="font-size:11px"
+                      @click="nb.rules.push(editEmptyRule())">+ Add rule</button>
+                  </template>
+                </div>
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" style="margin-bottom:8px;font-size:12px"
+                @click="editNsBindings.push(editEmptyNsBinding())">+ Add namespace binding</button>
+            </template>
 
             <div class="modal-footer" style="padding:0;border:none;margin-top:4px">
               <button type="button" class="btn btn-ghost" @click="editTarget = null">Cancel</button>
@@ -208,10 +259,8 @@
     <div v-if="rulesTarget" class="modal-overlay" @click.self="rulesTarget = null">
       <div class="modal" style="max-width:680px">
         <div class="modal-header">
-          Rules — <strong class="font-mono">{{ rulesTarget.name }}</strong>
-          <span class="badge badge-gray" style="margin-left:8px;font-size:11px">
-            {{ rulesTarget.namespace ? rulesTarget.namespace : 'cluster-wide' }}
-          </span>
+          Rules — <strong class="font-mono">{{ rulesTarget.username }}</strong>
+          <span class="badge badge-gray" style="margin-left:8px;font-size:11px">{{ rulesTarget.scope }}</span>
         </div>
         <div class="modal-body" style="padding:0">
           <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -223,15 +272,12 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(rule, i) in rulesTarget.rules" :key="i"
-                style="border-bottom:1px solid var(--border)">
+              <tr v-for="(rule, i) in rulesTarget.rules" :key="i" style="border-bottom:1px solid var(--border)">
                 <td style="padding:9px 16px;font-family:monospace;font-size:12px;vertical-align:top">
                   <span v-if="rule.apiGroups.join('') === ''" class="text-muted">(core)</span>
                   <span v-else>{{ rule.apiGroups.join(', ') }}</span>
                 </td>
-                <td style="padding:9px 16px;font-family:monospace;font-size:12px;vertical-align:top">
-                  {{ rule.resources.join(', ') }}
-                </td>
+                <td style="padding:9px 16px;font-family:monospace;font-size:12px;vertical-align:top">{{ rule.resources.join(', ') }}</td>
                 <td style="padding:9px 16px;vertical-align:top">
                   <span v-for="v in rule.verbs" :key="v" class="badge badge-info" style="margin:2px 2px 2px 0;font-size:11px">{{ v }}</span>
                 </td>
@@ -274,7 +320,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listUsers, deleteUser, updateUserRBAC, type User } from '@/api/users'
+import { listUsers, deleteUser, updateUserRBAC, type User, type NamespaceBinding, type PolicyRule } from '@/api/users'
 import { client } from '@/api/client'
 
 const EDIT_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
@@ -319,25 +365,48 @@ const deleteTarget = ref<string | null>(null)
 const viewTarget  = ref<string | null>(null)
 const viewContent = ref('')
 const viewCopied  = ref(false)
-const rulesTarget = ref<User | null>(null)
+interface RulesView { username: string; scope: string; rules: PolicyRule[] }
+const rulesTarget = ref<RulesView | null>(null)
+
+function openClusterRules(u: User) {
+  if (!u.rules?.length) return
+  rulesTarget.value = { username: u.name, scope: 'cluster-wide', rules: u.rules }
+}
+function openNsRules(u: User, nb: NamespaceBinding) {
+  if (!nb.rules?.length) return
+  rulesTarget.value = { username: u.name, scope: nb.namespace, rules: nb.rules }
+}
+
+interface NsBindingEditDraft { namespace: string; role: string; advanced: boolean; rules: RuleDraft[] }
+function editEmptyNsBinding(): NsBindingEditDraft {
+  return { namespace: '', role: '', advanced: false, rules: [editEmptyRule()] }
+}
 
 const editTarget      = ref<User | null>(null)
 const editBindingType = ref<'cluster' | 'namespace'>('cluster')
 const editAdvanced    = ref(false)
-const editForm        = reactive({ clusterRole: '', namespace: '', role: '' })
+const editForm        = reactive({ clusterRole: '' })
 const editRules       = ref<RuleDraft[]>([editEmptyRule()])
+const editNsBindings  = ref<NsBindingEditDraft[]>([editEmptyNsBinding()])
 const editSaving      = ref(false)
 const editError       = ref('')
 
 function openEdit(u: User) {
-  editTarget.value      = u
-  editError.value       = ''
+  editTarget.value   = u
+  editError.value    = ''
+  const hasNs = !!(u.namespaceBindings?.length)
+  editBindingType.value = hasNs ? 'namespace' : 'cluster'
   editAdvanced.value    = !!u.customRole
-  editBindingType.value = u.namespace ? 'namespace' : 'cluster'
   editForm.clusterRole  = u.clusterRole ?? ''
-  editForm.namespace    = u.namespace ?? ''
-  editForm.role         = u.role ?? ''
   editRules.value       = u.rules?.length ? u.rules.map(ruleToDraft) : [editEmptyRule()]
+  editNsBindings.value  = hasNs
+    ? u.namespaceBindings!.map(nb => ({
+        namespace: nb.namespace,
+        role: nb.role ?? '',
+        advanced: !!nb.customRole,
+        rules: nb.rules?.length ? nb.rules.map(ruleToDraft) : [editEmptyRule()],
+      }))
+    : [editEmptyNsBinding()]
 }
 
 async function submitEdit() {
@@ -346,15 +415,17 @@ async function submitEdit() {
   editSaving.value = true
   try {
     let payload
-    if (editAdvanced.value) {
-      payload = {
-        rules: editRules.value.map(draftToRule),
-        ...(editBindingType.value === 'namespace' ? { namespace: editForm.namespace } : {}),
-      }
-    } else if (editBindingType.value === 'cluster') {
-      payload = { clusterRole: editForm.clusterRole }
+    if (editBindingType.value === 'cluster') {
+      payload = editAdvanced.value
+        ? { rules: editRules.value.map(draftToRule) }
+        : { clusterRole: editForm.clusterRole }
     } else {
-      payload = { namespace: editForm.namespace, role: editForm.role }
+      payload = {
+        namespaceBindings: editNsBindings.value.map(nb => ({
+          namespace: nb.namespace,
+          ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+        })) as NamespaceBinding[],
+      }
     }
     await updateUserRBAC(editTarget.value.name, payload)
     editTarget.value = null

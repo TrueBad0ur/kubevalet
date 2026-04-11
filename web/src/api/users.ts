@@ -6,14 +6,20 @@ export interface PolicyRule {
   verbs: string[]
 }
 
+export interface NamespaceBinding {
+  namespace: string
+  role?: string
+  customRole?: boolean
+  rules?: PolicyRule[]
+}
+
 export interface User {
   name: string
   groups?: string[]
   clusterRole?: string
-  namespace?: string
-  role?: string
   customRole?: boolean
   rules?: PolicyRule[]
+  namespaceBindings?: NamespaceBinding[]
   status: string
   createdAt: string
 }
@@ -22,16 +28,14 @@ export interface CreateUserRequest {
   name: string
   groups: string[]
   clusterRole?: string
-  namespace?: string
-  role?: string
   rules?: PolicyRule[]
+  namespaceBindings?: NamespaceBinding[]
 }
 
 export interface UpdateRBACRequest {
   clusterRole?: string
-  namespace?: string
-  role?: string
   rules?: PolicyRule[]
+  namespaceBindings?: NamespaceBinding[]
 }
 
 export interface CreateUserResponse {

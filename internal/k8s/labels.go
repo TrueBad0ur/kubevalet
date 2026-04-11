@@ -11,7 +11,8 @@ const (
 	AnnotationClusterRole = "kubevalet.io/cluster-role"
 	AnnotationNamespace   = "kubevalet.io/namespace"
 	AnnotationRole        = "kubevalet.io/role"
-	AnnotationCustomRole  = "kubevalet.io/custom-role" // "true" when a custom Role/ClusterRole was created
+	AnnotationCustomRole        = "kubevalet.io/custom-role"         // "true" when cluster-wide custom Role was created
+	AnnotationNamespaceBindings = "kubevalet.io/namespace-bindings"  // JSON array of {namespace,role?,customRole?}
 
 	// Naming prefix for all managed k8s objects
 	ResourcePrefix = "kubevalet-"

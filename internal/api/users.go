@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -23,14 +24,22 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	advanced := len(req.Rules) > 0
-	if !advanced {
-		if req.ClusterRole == "" && (req.Namespace == "" || req.Role == "") {
-			respondError(c, http.StatusBadRequest, fmt.Errorf("provide either clusterRole, namespace+role, or rules"))
+	clusterCustom := len(req.Rules) > 0
+	nsScoped := len(req.NamespaceBindings) > 0
+
+	if req.ClusterRole == "" && !clusterCustom && !nsScoped {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, rules (cluster-wide), or namespaceBindings"))
+		return
+	}
+	for _, nb := range req.NamespaceBindings {
+		if nb.Namespace == "" {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("each namespaceBinding must have a namespace"))
 			return
 		}
-	} else {
-		// namespace may be empty (cluster-wide custom role)
+		if nb.Role == "" && len(nb.Rules) == 0 {
+			respondError(c, http.StatusBadRequest, fmt.Errorf("each namespaceBinding must have role or rules"))
+			return
+		}
 	}
 
 	// 1. Generate private key + CSR
@@ -40,7 +49,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 2. Submit CSR to k8s, approve it, wait for signed certificate
+	// 2. Submit CSR
 	annotations := buildAnnotations(req)
 	certPEM, err := h.k8s.SubmitAndApproveCSR(c.Request.Context(), req.Name, kp.CSRPEM, annotations)
 	if err != nil {
@@ -52,23 +61,19 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 3. Persist private key in a Secret (only copy — never logged or returned raw)
+	// 3. Store private key
 	if err := h.k8s.StorePrivateKey(c.Request.Context(), req.Name, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	// 4. Create RBAC binding
-	if advanced {
-		if req.Namespace != "" {
-			err = h.k8s.CreateCustomRole(c.Request.Context(), req.Name, req.Namespace, req.Rules)
-		} else {
-			err = h.k8s.CreateCustomClusterRole(c.Request.Context(), req.Name, req.Rules)
-		}
-	} else if req.ClusterRole != "" {
+	// 4. Create RBAC bindings
+	if req.ClusterRole != "" {
 		err = h.k8s.CreateClusterRoleBinding(c.Request.Context(), req.Name, req.ClusterRole)
+	} else if clusterCustom {
+		err = h.k8s.CreateCustomClusterRole(c.Request.Context(), req.Name, req.Rules)
 	} else {
-		err = h.k8s.CreateRoleBinding(c.Request.Context(), req.Name, req.Namespace, req.Role)
+		err = h.k8s.CreateNamespaceBindings(c.Request.Context(), req.Name, req.NamespaceBindings)
 	}
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -81,7 +86,6 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
-
 	kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
 		Username:      req.Name,
 		ClusterName:   h.cfg.ClusterName,
@@ -97,14 +101,13 @@ func (h *Handler) CreateUser(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, models.CreateUserResponse{
 		User: models.User{
-			Name:        req.Name,
-			Groups:      req.Groups,
-			ClusterRole: req.ClusterRole,
-			Namespace:   req.Namespace,
-			Role:        req.Role,
-			CustomRole:  advanced,
-			Status:      "Active",
-			CreatedAt:   time.Now().UTC(),
+			Name:              req.Name,
+			Groups:            req.Groups,
+			ClusterRole:       req.ClusterRole,
+			CustomRole:        clusterCustom,
+			NamespaceBindings: req.NamespaceBindings,
+			Status:            "Active",
+			CreatedAt:         time.Now().UTC(),
 		},
 		Kubeconfig: string(kubeconfigYAML),
 	})
@@ -127,22 +130,49 @@ func (h *Handler) ListUsers(c *gin.Context) {
 			groups = strings.Split(g, ",")
 		}
 
-		u := models.User{
-			Name:        username,
-			Groups:      groups,
-			ClusterRole: ann[k8s.AnnotationClusterRole],
-			Namespace:   ann[k8s.AnnotationNamespace],
-			Role:        ann[k8s.AnnotationRole],
-			CustomRole:  ann[k8s.AnnotationCustomRole] == "true",
-			Status:      csrStatusString(csr),
-			CreatedAt:   csr.CreationTimestamp.Time,
+		// Namespace bindings: new JSON format or backward-compat single-namespace
+		var nsBindings []models.NamespaceBinding
+		if nb := ann[k8s.AnnotationNamespaceBindings]; nb != "" {
+			nsBindings = decodeNsBindings(nb)
+		} else if oldNs := ann[k8s.AnnotationNamespace]; oldNs != "" {
+			isCustom := ann[k8s.AnnotationCustomRole] == "true"
+			nsBindings = []models.NamespaceBinding{{
+				Namespace:  oldNs,
+				Role:       ann[k8s.AnnotationRole],
+				CustomRole: isCustom,
+			}}
 		}
+
+		// Cluster-wide custom: customRole=true with no namespace annotations (old or new)
+		isClusterCustom := ann[k8s.AnnotationCustomRole] == "true" &&
+			ann[k8s.AnnotationNamespace] == "" &&
+			ann[k8s.AnnotationNamespaceBindings] == ""
+
+		u := models.User{
+			Name:              username,
+			Groups:            groups,
+			ClusterRole:       ann[k8s.AnnotationClusterRole],
+			CustomRole:        isClusterCustom,
+			NamespaceBindings: nsBindings,
+			Status:            csrStatusString(csr),
+			CreatedAt:         csr.CreationTimestamp.Time,
+		}
+
+		// Fetch rules for cluster-wide custom role
 		if u.CustomRole {
-			rules, err := h.k8s.GetCustomRoleRules(c.Request.Context(), username, u.Namespace)
-			if err == nil {
+			if rules, err := h.k8s.GetCustomRoleRules(c.Request.Context(), username, ""); err == nil {
 				u.Rules = rules
 			}
 		}
+		// Fetch rules for custom namespace bindings
+		for i, nb := range u.NamespaceBindings {
+			if nb.CustomRole {
+				if rules, err := h.k8s.GetCustomRoleRules(c.Request.Context(), username, nb.Namespace); err == nil {
+					u.NamespaceBindings[i].Rules = rules
+				}
+			}
+		}
+
 		users = append(users, u)
 	}
 
@@ -153,7 +183,6 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	username := c.Param("name")
 	ctx := c.Request.Context()
 
-	// Read CSR first to find the namespace for RoleBinding cleanup
 	csr, err := h.k8s.GetCSR(ctx, username)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
@@ -164,40 +193,30 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	ns := csr.Annotations[k8s.AnnotationNamespace]
-	customRole := csr.Annotations[k8s.AnnotationCustomRole] == "true"
+	ann := csr.Annotations
+	// Cluster-wide custom role (old or new format)
+	isClusterCustom := ann[k8s.AnnotationCustomRole] == "true" &&
+		ann[k8s.AnnotationNamespace] == "" &&
+		ann[k8s.AnnotationNamespaceBindings] == ""
 
 	var errs []string
-	for _, fn := range []func() error{
-		func() error { return h.k8s.DeleteCSR(ctx, username) },
-		func() error { return h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace) },
-		func() error { return h.k8s.DeleteClusterRoleBinding(ctx, username) },
-		func() error {
-			if ns == "" {
-				return nil
-			}
-			return h.k8s.DeleteRoleBinding(ctx, username, ns)
-		},
-		func() error {
-			if !customRole {
-				return nil
-			}
-			if ns != "" {
-				return h.k8s.DeleteCustomRole(ctx, username, ns)
-			}
-			return h.k8s.DeleteCustomClusterRole(ctx, username)
-		},
-	} {
-		if err := fn(); err != nil {
-			errs = append(errs, err.Error())
+	collect := func(e error) {
+		if e != nil {
+			errs = append(errs, e.Error())
 		}
 	}
+	collect(h.k8s.DeleteCSR(ctx, username))
+	collect(h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace))
+	collect(h.k8s.DeleteClusterRoleBinding(ctx, username))
+	if isClusterCustom {
+		collect(h.k8s.DeleteCustomClusterRole(ctx, username))
+	}
+	collect(h.k8s.DeleteAllNamespaceBindings(ctx, username))
 
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
 		return
 	}
-
 	c.Status(http.StatusNoContent)
 }
 
@@ -211,9 +230,11 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		return
 	}
 
-	advanced := len(req.Rules) > 0
-	if !advanced && req.ClusterRole == "" && (req.Namespace == "" || req.Role == "") {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, namespace+role, or rules"))
+	clusterCustom := len(req.Rules) > 0
+	nsScoped := len(req.NamespaceBindings) > 0
+
+	if req.ClusterRole == "" && !clusterCustom && !nsScoped {
+		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, rules, or namespaceBindings"))
 		return
 	}
 
@@ -227,10 +248,12 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		return
 	}
 
-	oldNs := csr.Annotations[k8s.AnnotationNamespace]
-	oldCustom := csr.Annotations[k8s.AnnotationCustomRole] == "true"
+	ann := csr.Annotations
+	isOldClusterCustom := ann[k8s.AnnotationCustomRole] == "true" &&
+		ann[k8s.AnnotationNamespace] == "" &&
+		ann[k8s.AnnotationNamespaceBindings] == ""
 
-	// Remove old bindings
+	// Delete old bindings
 	var errs []string
 	collect := func(e error) {
 		if e != nil {
@@ -238,54 +261,43 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		}
 	}
 	collect(h.k8s.DeleteClusterRoleBinding(ctx, username))
-	if oldNs != "" {
-		collect(h.k8s.DeleteRoleBinding(ctx, username, oldNs))
+	if isOldClusterCustom {
+		collect(h.k8s.DeleteCustomClusterRole(ctx, username))
 	}
-	if oldCustom {
-		if oldNs != "" {
-			collect(h.k8s.DeleteCustomRole(ctx, username, oldNs))
-		} else {
-			collect(h.k8s.DeleteCustomClusterRole(ctx, username))
-		}
-	}
+	collect(h.k8s.DeleteAllNamespaceBindings(ctx, username))
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
 		return
 	}
 
 	// Create new bindings
-	if advanced {
-		if req.Namespace != "" {
-			err = h.k8s.CreateCustomRole(ctx, username, req.Namespace, req.Rules)
-		} else {
-			err = h.k8s.CreateCustomClusterRole(ctx, username, req.Rules)
-		}
-	} else if req.ClusterRole != "" {
+	if req.ClusterRole != "" {
 		err = h.k8s.CreateClusterRoleBinding(ctx, username, req.ClusterRole)
+	} else if clusterCustom {
+		err = h.k8s.CreateCustomClusterRole(ctx, username, req.Rules)
 	} else {
-		err = h.k8s.CreateRoleBinding(ctx, username, req.Namespace, req.Role)
+		err = h.k8s.CreateNamespaceBindings(ctx, username, req.NamespaceBindings)
 	}
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	// Update CSR annotations (preserve groups)
+	// Update CSR annotations
 	newAnn := map[string]string{}
-	if g := csr.Annotations[k8s.AnnotationGroups]; g != "" {
+	if g := ann[k8s.AnnotationGroups]; g != "" {
 		newAnn[k8s.AnnotationGroups] = g
 	}
 	if req.ClusterRole != "" {
 		newAnn[k8s.AnnotationClusterRole] = req.ClusterRole
 	}
-	if req.Namespace != "" {
-		newAnn[k8s.AnnotationNamespace] = req.Namespace
-	}
-	if req.Role != "" {
-		newAnn[k8s.AnnotationRole] = req.Role
-	}
-	if advanced {
+	if clusterCustom {
 		newAnn[k8s.AnnotationCustomRole] = "true"
+	}
+	if nsScoped {
+		if data, jerr := json.Marshal(compactNsBindings(req.NamespaceBindings)); jerr == nil {
+			newAnn[k8s.AnnotationNamespaceBindings] = string(data)
+		}
 	}
 	if err := h.k8s.UpdateCSRAnnotations(ctx, username, newAnn); err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -357,16 +369,49 @@ func buildAnnotations(req models.CreateUserRequest) map[string]string {
 	if req.ClusterRole != "" {
 		ann[k8s.AnnotationClusterRole] = req.ClusterRole
 	}
-	if req.Namespace != "" {
-		ann[k8s.AnnotationNamespace] = req.Namespace
-	}
-	if req.Role != "" {
-		ann[k8s.AnnotationRole] = req.Role
-	}
 	if len(req.Rules) > 0 {
 		ann[k8s.AnnotationCustomRole] = "true"
 	}
+	if len(req.NamespaceBindings) > 0 {
+		if data, err := json.Marshal(compactNsBindings(req.NamespaceBindings)); err == nil {
+			ann[k8s.AnnotationNamespaceBindings] = string(data)
+		}
+	}
 	return ann
+}
+
+type compactBinding struct {
+	Namespace  string `json:"namespace"`
+	Role       string `json:"role,omitempty"`
+	CustomRole bool   `json:"customRole,omitempty"`
+}
+
+func compactNsBindings(bindings []models.NamespaceBinding) []compactBinding {
+	result := make([]compactBinding, len(bindings))
+	for i, b := range bindings {
+		result[i] = compactBinding{
+			Namespace:  b.Namespace,
+			Role:       b.Role,
+			CustomRole: b.CustomRole || len(b.Rules) > 0,
+		}
+	}
+	return result
+}
+
+func decodeNsBindings(s string) []models.NamespaceBinding {
+	var items []compactBinding
+	if err := json.Unmarshal([]byte(s), &items); err != nil {
+		return nil
+	}
+	result := make([]models.NamespaceBinding, len(items))
+	for i, it := range items {
+		result[i] = models.NamespaceBinding{
+			Namespace:  it.Namespace,
+			Role:       it.Role,
+			CustomRole: it.CustomRole,
+		}
+	}
+	return result
 }
 
 func csrStatusString(csr certificatesv1.CertificateSigningRequest) string {

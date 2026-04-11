@@ -144,6 +144,48 @@ func (c *Client) CreateCustomRole(ctx context.Context, username, namespace strin
 	return nil
 }
 
+// CreateNamespaceBindings creates RoleBindings (and custom Roles if needed) for each namespace binding.
+func (c *Client) CreateNamespaceBindings(ctx context.Context, username string, bindings []models.NamespaceBinding) error {
+	for _, b := range bindings {
+		var err error
+		if len(b.Rules) > 0 {
+			err = c.CreateCustomRole(ctx, username, b.Namespace, b.Rules)
+		} else {
+			err = c.CreateRoleBinding(ctx, username, b.Namespace, b.Role)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteAllNamespaceBindings removes all RoleBindings and custom Roles for this user across all namespaces.
+func (c *Client) DeleteAllNamespaceBindings(ctx context.Context, username string) error {
+	selector := LabelUsername + "=" + username
+
+	rbs, err := c.Kubernetes.RbacV1().RoleBindings("").List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("list role bindings: %w", err)
+	}
+	for _, rb := range rbs.Items {
+		if err := c.Kubernetes.RbacV1().RoleBindings(rb.Namespace).Delete(ctx, rb.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("delete role binding %s/%s: %w", rb.Namespace, rb.Name, err)
+		}
+	}
+
+	roles, err := c.Kubernetes.RbacV1().Roles("").List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("list roles: %w", err)
+	}
+	for _, r := range roles.Items {
+		if err := c.Kubernetes.RbacV1().Roles(r.Namespace).Delete(ctx, r.Name, metav1.DeleteOptions{}); err != nil && !k8serrors.IsNotFound(err) {
+			return fmt.Errorf("delete role %s/%s: %w", r.Namespace, r.Name, err)
+		}
+	}
+	return nil
+}
+
 func (c *Client) DeleteCustomClusterRole(ctx context.Context, username string) error {
 	err := c.Kubernetes.RbacV1().ClusterRoles().Delete(ctx, resourceName(username), metav1.DeleteOptions{})
 	if err != nil && !k8serrors.IsNotFound(err) {
