@@ -24,9 +24,11 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Extract chart version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#chart-v}" >> "$GITHUB_OUTPUT"
+      - name: Extract chart version and lowercase owner
+        id: meta
+        run: |
+          echo "version=${GITHUB_REF_NAME#chart-v}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
       - name: Lint chart
         run: helm lint ${{ env.CHART_PATH }}
@@ -35,18 +37,18 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
           helm registry login ${{ env.REGISTRY }} \
-            --username ${{ github.actor }} \
+            --username ${{ steps.meta.outputs.owner }} \
             --password-stdin
 
       - name: Package chart
         run: |
           helm package ${{ env.CHART_PATH }} \
-            --version ${{ steps.version.outputs.version }} \
-            --app-version ${{ steps.version.outputs.version }} \
+            --version ${{ steps.meta.outputs.version }} \
+            --app-version ${{ steps.meta.outputs.version }} \
             --destination /tmp/chart-output
 
       - name: Push chart to ghcr.io
         run: |
           helm push \
-            /tmp/chart-output/${{ env.CHART_NAME }}-${{ steps.version.outputs.version }}.tgz \
-            oci://${{ env.REGISTRY }}/${{ github.repository_owner }}
+            /tmp/chart-output/${{ env.CHART_NAME }}-${{ steps.meta.outputs.version }}.tgz \
+            oci://${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}
