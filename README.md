@@ -212,7 +212,7 @@ make build
 
 ## Roadmap
 
-- [ ] Screenshots in README
+- [x] Screenshots in README
 - [ ] Keycloak / OIDC integration
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
