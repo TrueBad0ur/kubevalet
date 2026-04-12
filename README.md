@@ -69,7 +69,7 @@ After that it activates automatically on every `make commit` and `make release` 
 ```bash
 git checkout -b 0.3.13-dev
 
-# make changes, commit and push
+# iterate freely — no version bumps needed
 make commit MSG="add feature X"
 make commit MSG="fix bug Y"
 ```
@@ -90,22 +90,24 @@ KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
 
 ### Release — when ready to ship
 
-1. Bump version in all four places:
-   - `image.tag` in `charts/kubevalet/values.yaml`
-   - `version` + `appVersion` in `charts/kubevalet/Chart.yaml`
-   - `image.tag` row in `README.md`
-   - version in `charts/kubevalet/README.md`
-
-2. Release:
+1. Bump version as the **last commit on the feature branch** before opening a PR:
 ```bash
-make release MSG="release 0.3.13" VER=0.3.13
+make bump VER=0.3.13
+```
+This updates all four version locations and commits `"release version 0.3.13"` automatically.
+
+2. Open a PR → merge to `main`.
+
+3. On `main` after merge — tag HEAD and trigger CI:
+```bash
+make release VER=0.3.13
 ```
 
 GitHub Actions builds two things in parallel:
 - Docker image `truebad0ur/kubevalet:0.3.13` + `latest` → DockerHub
 - Helm chart `0.3.13` → ghcr.io → Artifact Hub
 
-3. Deploy:
+4. Deploy:
 ```bash
 KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
   -n kubevalet --reuse-values --set image.tag=0.3.13
@@ -202,7 +204,7 @@ make build
 - [ ] Keycloak / OIDC integration
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
-- [ ] User expiry / certificate rotation reminders
+- [x] User expiry / certificate rotation reminders
 - [ ] Role templates (save and reuse custom RBAC configs)
 - [ ] LDAP sync
 - [ ] CVE scanning in CI (Trivy)

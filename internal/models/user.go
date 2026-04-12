@@ -26,6 +26,7 @@ type User struct {
 	NamespaceBindings []NamespaceBinding `json:"namespaceBindings,omitempty"`
 	Status            string             `json:"status"`
 	CreatedAt         time.Time          `json:"createdAt"`
+	CertExpiresAt     *time.Time         `json:"certExpiresAt,omitempty"`
 }
 
 type CreateUserRequest struct {
@@ -54,4 +55,9 @@ type UpdateRBACResponse struct {
 type CreateUserResponse struct {
 	User       User   `json:"user"`
 	Kubeconfig string `json:"kubeconfig"`
+}
+
+type RenewCertificateResponse struct {
+	Kubeconfig    string    `json:"kubeconfig"`
+	CertExpiresAt time.Time `json:"certExpiresAt"`
 }

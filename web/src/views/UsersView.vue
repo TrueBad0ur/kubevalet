@@ -36,6 +36,7 @@
               <th @click="setSort('createdAt')" style="cursor:pointer;user-select:none;white-space:nowrap">
                 Created <span class="sort-indicator">{{ sortKey === 'createdAt' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
+              <th>Cert Expires</th>
               <th></th>
             </tr>
           </thead>
@@ -68,6 +69,7 @@
                 <span class="badge" :class="statusClass(u.status)">{{ u.status }}</span>
               </td>
               <td class="text-muted text-sm">{{ formatDate(u.createdAt) }}</td>
+              <td class="text-sm" :class="expiryClass(u.certExpiresAt)">{{ formatExpiry(u.certExpiresAt) }}</td>
 
               <!-- Actions: primary = Edit, Kubeconfig, Delete; secondary = Sync icon -->
               <td style="white-space:nowrap">
@@ -84,6 +86,11 @@
                     <svg v-else width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
                       <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
                     </svg>
+                  </button>
+                  <button class="btn btn-ghost btn-sm" @click="doRenew(u.name)" :disabled="renewing === u.name"
+                    title="Renew certificate">
+                    <span v-if="renewing === u.name" class="spinner" style="width:14px;height:14px" />
+                    <span v-else>Renew</span>
                   </button>
                   <button class="btn btn-danger btn-sm" @click="confirmDelete(u.name)" :disabled="deleting === u.name">
                     <span v-if="deleting === u.name" class="spinner" />
@@ -367,6 +374,30 @@
       </div>
     </div>
 
+    <!-- Renew certificate: new kubeconfig modal -->
+    <div v-if="renewKubeconfig" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          Certificate renewed — <strong class="font-mono">{{ renewKubeconfigUser }}</strong>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom:12px;font-size:13.5px">
+            New certificate issued. Download the kubeconfig — the old one is now invalid.
+          </p>
+          <textarea readonly class="code-block" style="width:100%;resize:none;border:none;outline:none;cursor:text"
+            :rows="renewKubeconfig.split('\n').length">{{ renewKubeconfig }}</textarea>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="copyRenewKubeconfig">{{ renewKubeconfigCopied ? '✓ Copied' : 'Copy' }}</button>
+          <button class="btn btn-primary" @click="downloadRenewKubeconfig">
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+            Download
+          </button>
+          <button class="btn btn-ghost" @click="renewKubeconfig = ''">Close</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Delete confirmation modal -->
     <div v-if="deleteTarget" class="modal-overlay" @click.self="deleteTarget = null">
       <div class="modal" style="max-width:400px">
@@ -393,7 +424,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { listUsers, deleteUser, updateUserRBAC, syncUser, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
+import { listUsers, deleteUser, updateUserRBAC, syncUser, renewCertificate, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
 import { client } from '@/api/client'
 
@@ -434,6 +465,10 @@ const loading     = ref(true)
 const error       = ref('')
 const deleting    = ref('')
 const syncing     = ref('')
+const renewing    = ref('')
+const renewKubeconfig      = ref('')
+const renewKubeconfigUser  = ref('')
+const renewKubeconfigCopied = ref(false)
 
 function accessRoleClass(role: string): string {
   if (role === 'cluster-admin') return 'badge-danger'
@@ -755,8 +790,71 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString()
 }
 
+function formatExpiry(iso?: string): string {
+  if (!iso) return '—'
+  const exp = new Date(iso)
+  const now = new Date()
+  const diffMs = exp.getTime() - now.getTime()
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+  const dateStr = exp.toLocaleDateString()
+  if (diffDays < 0) return `${dateStr} (expired ${Math.abs(diffDays)}d ago)`
+  if (diffDays === 0) return `${dateStr} (today)`
+  return `${dateStr} (${diffDays}d)`
+}
+
+function expiryClass(iso?: string): string {
+  if (!iso) return 'text-muted'
+  const diffMs = new Date(iso).getTime() - Date.now()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+  if (diffDays < 0) return 'cert-expired'
+  if (diffDays <= 30) return 'cert-expiring'
+  return 'cert-valid'
+}
+
+async function doRenew(name: string) {
+  renewing.value = name
+  error.value = ''
+  try {
+    const res = await renewCertificate(name)
+    renewKubeconfig.value      = res.kubeconfig
+    renewKubeconfigUser.value  = name
+    renewKubeconfigCopied.value = false
+    await load()
+  } catch (e: any) {
+    error.value = e.response?.data?.error ?? 'Renew failed'
+    setTimeout(() => { error.value = '' }, 4000)
+  } finally {
+    renewing.value = ''
+  }
+}
+
+async function copyRenewKubeconfig() {
+  try { await navigator.clipboard.writeText(renewKubeconfig.value) } catch {
+    const ta = document.createElement('textarea')
+    ta.value = renewKubeconfig.value; ta.style.cssText = 'position:fixed;opacity:0'
+    document.body.appendChild(ta); ta.focus(); ta.select()
+    document.execCommand('copy'); document.body.removeChild(ta)
+  }
+  renewKubeconfigCopied.value = true
+  setTimeout(() => { renewKubeconfigCopied.value = false }, 2000)
+}
+
+function downloadRenewKubeconfig() {
+  const name = renewKubeconfigUser.value
+  const url = URL.createObjectURL(new Blob([renewKubeconfig.value], { type: 'application/x-yaml' }))
+  const a = document.createElement('a')
+  a.href = url; a.download = `${name}.kubeconfig`; a.click()
+  URL.revokeObjectURL(url)
+}
+
 onMounted(async () => {
   await load()
   try { allGroups.value = await listGroups() } catch {}
 })
 </script>
+
+<style scoped>
+.cert-valid    { color: var(--success, #16a34a); }
+.cert-expiring { color: var(--warning-text, #b45309); }
+.cert-expired  { color: var(--danger, #dc2626); font-weight: 600; }
+</style>

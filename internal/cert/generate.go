@@ -7,6 +7,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"time"
 )
 
 type KeyPair struct {
@@ -48,4 +49,17 @@ func Generate(username string, groups []string) (*KeyPair, error) {
 		PrivateKeyPEM: privKeyPEM,
 		CSRPEM:        csrPEM,
 	}, nil
+}
+
+// ParseExpiry extracts the NotAfter timestamp from a PEM-encoded x509 certificate.
+func ParseExpiry(certPEM []byte) (time.Time, error) {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return time.Time{}, fmt.Errorf("failed to decode PEM block")
+	}
+	c, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse certificate: %w", err)
+	}
+	return c.NotAfter, nil
 }

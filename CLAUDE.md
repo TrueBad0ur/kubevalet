@@ -12,16 +12,19 @@ Users can belong to groups (x509 O field) or have no direct RBAC (groups-only). 
 
 ## MANDATORY rules (never skip)
 
-1. **After every change — bump versions** in all three places to the same value:
-   - `image.tag` in `charts/kubevalet/values.yaml`
-   - `version` + `appVersion` in `charts/kubevalet/Chart.yaml`
-   - `image.tag` row in `README.md` key values table
-   - version references in `charts/kubevalet/README.md`
+1. **Version bumping — only when preparing a release, not during feature branch iteration:**
+   - On a feature branch (`x.x.x-suffix`): **do NOT bump versions** while developing. Iterate freely.
+   - As the **last commit before opening a PR**: bump versions in all four places to the same target value:
+     - `image.tag` in `charts/kubevalet/values.yaml`
+     - `version` + `appVersion` in `charts/kubevalet/Chart.yaml`
+     - `image.tag` row in `README.md` key values table
+     - version references in `charts/kubevalet/README.md`
+   - After PR merges to `main`: run `make release VER=<version>` — this tags main and CI builds everything.
 
-2. **After every session — print the release command:**
-   ```bash
-   make release MSG="<describe changes>" VER=<new-version>
-   ```
+2. **After every session — print the appropriate command:**
+   - If on a feature branch (still iterating): `make commit MSG="<describe changes>"`
+   - If feature is ready for PR (last commit on branch): `make bump VER=<version>`
+   - If on main after PR merge (just tagging): `make release VER=<version>`
 
 ---
 
