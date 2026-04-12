@@ -19,6 +19,3 @@ maintainers:
     url: https://github.com/TrueBad0ur
 annotations:
   artifacthub.io/license: MIT
-  artifacthub.io/signKey: |
-    fingerprint: ""
-    url: ""
