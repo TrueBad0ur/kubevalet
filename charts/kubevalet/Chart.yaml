@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubevalet
 description: Lightweight Kubernetes user management — x509 users, RBAC groups, kubeconfigs via a web UI
 type: application
-version: 0.3.9
-appVersion: "0.3.9"
+version: 0.3.10
+appVersion: "0.3.10"
 keywords:
   - kubernetes
   - users
@@ -21,4 +21,4 @@ annotations:
   artifacthub.io/license: MIT
   artifacthub.io/images: |
     - name: kubevalet
-      image: https://raw.githubusercontent.com/TrueBad0ur/kubevalet/main/assets/kubevalet-icon.svg
+      image: truebad0ur/kubevalet
