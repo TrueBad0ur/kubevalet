@@ -1,5 +1,12 @@
 # kubevalet
 
+[![Image build](https://github.com/TrueBad0ur/kubevalet/actions/workflows/image-release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/image-release.yml)
+[![Chart release](https://github.com/TrueBad0ur/kubevalet/actions/workflows/chart-release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/chart-release.yml)
+[![Docker Image Version](https://img.shields.io/docker/v/truebad0ur/kubevalet?label=docker&sort=semver)](https://hub.docker.com/r/truebad0ur/kubevalet)
+[![Docker Pulls](https://img.shields.io/docker/pulls/truebad0ur/kubevalet)](https://hub.docker.com/r/truebad0ur/kubevalet)
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/kubevalet)](https://artifacthub.io/packages/helm/kubevalet/kubevalet)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Lightweight Kubernetes user management with a web UI.
 
 Creates x509 users via the Kubernetes CSR API, issues kubeconfigs, and manages RBAC bindings — no LDAP, no OIDC, no Dex.
@@ -90,7 +97,7 @@ kubectl port-forward svc/kubevalet 8080:80 -n kubevalet
 
 | Value | Default | Description |
 |---|---|---|
-| `image.tag` | `0.2.9` | Image tag |
+| `image.tag` | `0.3.6` | Image tag |
 | `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to (can also be changed at runtime in Settings UI) |
 | `cluster.name` | `kubernetes` | Cluster name in kubeconfig context |
 | `auth.adminPassword` | `admin` | Initial admin password |
