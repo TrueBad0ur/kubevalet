@@ -128,3 +128,13 @@ export TOKEN_TTL=24h
 make build
 ./bin/kubevalet
 ```
+
+## Roadmap
+
+- [ ] Screenshots in README
+- [ ] Keycloak / OIDC integration
+- [ ] Multi-cluster support
+- [ ] Audit log (who created/deleted which user and when)
+- [ ] User expiry / certificate rotation reminders
+- [ ] Role templates (save and reuse custom RBAC configs)
+- [ ] LDAP sync
