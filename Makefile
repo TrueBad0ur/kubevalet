@@ -9,7 +9,7 @@ PLATFORMS := linux/amd64,linux/arm64
         docker-build docker-push docker-buildx docker-buildx-push \
         buildx-setup \
         helm-lint helm-package \
-        commit release
+        hooks-setup commit release
 
 ## ── Local dev ────────────────────────────────────────────────────────────────
 
@@ -71,11 +71,17 @@ docker-buildx-push:
 
 ## ── Git ──────────────────────────────────────────────────────────────────────
 
+# Run once after cloning to activate git hooks
+hooks-setup:
+	git config core.hooksPath .githooks
+	@echo "Git hooks activated (.githooks/pre-push)"
+
 # Usage: make commit MSG="your commit message"
 commit:
 ifndef MSG
 	$(error MSG is required, e.g.: make commit MSG="fix login button")
 endif
+	git config core.hooksPath .githooks
 	git add .
 	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push
@@ -90,6 +96,7 @@ endif
 ifndef VER
 	$(error VER is required, e.g.: make release MSG="release 0.3.10" VER=0.3.10)
 endif
+	git config core.hooksPath .githooks
 	git add .
 	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push

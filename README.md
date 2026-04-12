@@ -44,6 +44,74 @@ web/               # Vue 3 frontend (embedded in binary)
 charts/kubevalet/  # Helm chart (includes bundled PostgreSQL)
 ```
 
+## Development flow
+
+### Branch naming convention
+
+Feature branches must follow the format `x.x.x-suffix`, e.g.:
+
+```
+0.3.13-dev
+0.3.13-feature-oidc
+0.3.13-fix-login
+```
+
+This is enforced by a pre-push git hook. Activate it once after cloning:
+
+```bash
+make hooks-setup
+```
+
+After that it activates automatically on every `make commit` and `make release` — no need to remember.
+
+### Work in progress — feature branch
+
+```bash
+git checkout -b 0.3.13-dev
+
+# make changes, commit and push
+make commit MSG="add feature X"
+make commit MSG="fix bug Y"
+```
+
+Every push to a branch matching `x.x.x-*` builds a Docker image tagged with the branch name:
+
+```
+truebad0ur/kubevalet:0.3.13-dev
+truebad0ur/kubevalet:0.3.13-feature-oidc
+```
+
+Deploy a branch image to test before releasing:
+
+```bash
+KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
+  -n kubevalet --reuse-values --set image.tag=0.3.13-dev
+```
+
+### Release — when ready to ship
+
+1. Bump version in all four places:
+   - `image.tag` in `charts/kubevalet/values.yaml`
+   - `version` + `appVersion` in `charts/kubevalet/Chart.yaml`
+   - `image.tag` row in `README.md`
+   - version in `charts/kubevalet/README.md`
+
+2. Release:
+```bash
+make release MSG="release 0.3.13" VER=0.3.13
+```
+
+GitHub Actions builds two things in parallel:
+- Docker image `truebad0ur/kubevalet:0.3.13` + `latest` → DockerHub
+- Helm chart `0.3.13` → ghcr.io → Artifact Hub
+
+3. Deploy:
+```bash
+KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
+  -n kubevalet --reuse-values --set image.tag=0.3.13
+KUBECONFIG=~/.kube/local-config kubectl rollout status deployment/kubevalet -n kubevalet
+```
+
 ## Build
 
 **Prerequisites:** Docker with buildx, a builder instance.
