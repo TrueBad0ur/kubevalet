@@ -3,7 +3,7 @@ name: Release Helm chart
 on:
   push:
     tags:
-      - "chart-v*"   # trigger: git tag chart-v0.3.2 && git push --tags
+      - "chart-v*"   # trigger: git tag chart-v0.3.3 && git push --tags
 
 env:
   REGISTRY: ghcr.io
@@ -24,6 +24,9 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
+      - name: Install oras (for pushing artifacthub-repo.yml)
+        uses: oras-project/setup-oras@v1
+
       - name: Extract chart version and lowercase owner
         id: meta
         run: |
@@ -40,6 +43,13 @@ jobs:
             --username ${{ steps.meta.outputs.owner }} \
             --password-stdin
 
+      - name: Log in to ghcr.io (oras)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          oras login ${{ env.REGISTRY }} \
+            --username ${{ steps.meta.outputs.owner }} \
+            --password-stdin
+
       - name: Package chart
         run: |
           helm package ${{ env.CHART_PATH }} \
@@ -52,3 +62,10 @@ jobs:
           helm push \
             /tmp/chart-output/${{ env.CHART_NAME }}-${{ steps.meta.outputs.version }}.tgz \
             oci://${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}
+
+      - name: Push artifacthub-repo.yml to ghcr.io
+        run: |
+          oras push \
+            ${{ env.REGISTRY }}/${{ steps.meta.outputs.owner }}/${{ env.CHART_NAME }}:artifacthub.io \
+            --config /dev/null:application/vnd.cncf.artifacthub.config.v1+yaml \
+            artifacthub-repo.yml:application/vnd.cncf.artifacthub.repository-metadata.layer.v1.yaml
