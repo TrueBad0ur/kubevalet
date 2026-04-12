@@ -94,8 +94,12 @@ endif
 	git add .
 	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push
+	git tag -d v$(VER) 2>/dev/null || true
+	git push origin :refs/tags/v$(VER) 2>/dev/null || true
 	git tag v$(VER)
 	git push origin v$(VER)
+	git tag -d chart-v$(VER) 2>/dev/null || true
+	git push origin :refs/tags/chart-v$(VER) 2>/dev/null || true
 	git tag chart-v$(VER)
 	git push origin chart-v$(VER)
 
@@ -109,7 +113,10 @@ ifndef CHART_TAG
 	$(error CHART_TAG is required, e.g.: make chart-release MSG="release chart 0.3.2" CHART_TAG=0.3.2)
 endif
 	git add .
-	git diff --cached --quiet || git commit -m "$(MSG)" && git push
+	git diff --cached --quiet || git commit -m "$(MSG)"
+	git push
+	git tag -d chart-v$(CHART_TAG) 2>/dev/null || true
+	git push origin :refs/tags/chart-v$(CHART_TAG) 2>/dev/null || true
 	git tag chart-v$(CHART_TAG)
 	git push origin chart-v$(CHART_TAG)
 
