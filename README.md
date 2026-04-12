@@ -5,7 +5,7 @@
 </p>
 
 [![Release](https://github.com/TrueBad0ur/kubevalet/actions/workflows/release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/release.yml)
-[![Docker Image Version](https://img.shields.io/docker/v/truebad0ur/kubevalet?label=docker&sort=semver)](https://hub.docker.com/r/truebad0ur/kubevalet)
+[![Docker Image Version](https://img.shields.io/docker/v/truebad0ur/kubevalet?label=docker&sort=date)](https://hub.docker.com/r/truebad0ur/kubevalet)
 [![Docker Pulls](https://img.shields.io/docker/pulls/truebad0ur/kubevalet)](https://hub.docker.com/r/truebad0ur/kubevalet)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/kubevalet)](https://artifacthub.io/packages/helm/kubevalet/kubevalet)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
