@@ -84,7 +84,7 @@ endif
 	git config core.hooksPath .githooks
 	git add .
 	git diff --cached --quiet || git commit -m "$(MSG)"
-	git push
+	git push --set-upstream origin $$(git branch --show-current)
 
 # Usage: make bump VER=0.3.13
 # Bumps version in all 4 files and commits "release version 0.3.13".
@@ -102,7 +102,7 @@ endif
 	git config core.hooksPath .githooks
 	git add charts/kubevalet/Chart.yaml charts/kubevalet/values.yaml README.md charts/kubevalet/README.md
 	git commit -m "release version $(VER)"
-	git push
+	git push --set-upstream origin $$(git branch --show-current)
 
 # Usage: make release VER=0.3.13
 # Tags HEAD as v<VER> and pushes the tag →
