@@ -9,7 +9,7 @@ PLATFORMS := linux/amd64,linux/arm64
         docker-build docker-push docker-buildx docker-buildx-push \
         buildx-setup \
         helm-lint helm-package \
-        commit release chart-release
+        commit release
 
 ## ── Local dev ────────────────────────────────────────────────────────────────
 
@@ -80,16 +80,15 @@ endif
 	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push
 
-# Usage: make release MSG="your message" VER=0.3.6
-# Commits, pushes, then creates both tags:
-#   v<VER>       → GitHub Actions builds Docker image → pushes to DockerHub
-#   v<VER>-chart → GitHub Actions packages Helm chart → pushes to ghcr.io → Artifact Hub
+# Usage: make release MSG="your message" VER=0.3.10
+# Commits, pushes, creates one tag v<VER> →
+#   GitHub Actions: Docker image → DockerHub + Helm chart → ghcr.io → Artifact Hub
 release:
 ifndef MSG
-	$(error MSG is required, e.g.: make release MSG="release 0.3.3" VER=0.3.3)
+	$(error MSG is required, e.g.: make release MSG="release 0.3.10" VER=0.3.10)
 endif
 ifndef VER
-	$(error VER is required, e.g.: make release MSG="release 0.3.3" VER=0.3.3)
+	$(error VER is required, e.g.: make release MSG="release 0.3.10" VER=0.3.10)
 endif
 	git add .
 	git diff --cached --quiet || git commit -m "$(MSG)"
@@ -98,27 +97,6 @@ endif
 	git push origin :refs/tags/v$(VER) 2>/dev/null || true
 	git tag v$(VER)
 	git push origin v$(VER)
-	git tag -d v$(VER)-chart 2>/dev/null || true
-	git push origin :refs/tags/v$(VER)-chart 2>/dev/null || true
-	git tag v$(VER)-chart
-	git push origin v$(VER)-chart
-
-# Usage: make chart-release MSG="your commit message" CHART_TAG=0.3.6
-# Commits, pushes, then tags the chart release only (triggers GitHub Actions → ghcr.io → Artifact Hub)
-chart-release:
-ifndef MSG
-	$(error MSG is required, e.g.: make chart-release MSG="release chart 0.3.6" CHART_TAG=0.3.6)
-endif
-ifndef CHART_TAG
-	$(error CHART_TAG is required, e.g.: make chart-release MSG="release chart 0.3.6" CHART_TAG=0.3.6)
-endif
-	git add .
-	git diff --cached --quiet || git commit -m "$(MSG)"
-	git push
-	git tag -d v$(CHART_TAG)-chart 2>/dev/null || true
-	git push origin :refs/tags/v$(CHART_TAG)-chart 2>/dev/null || true
-	git tag v$(CHART_TAG)-chart
-	git push origin v$(CHART_TAG)-chart
 
 ## ── Helm ─────────────────────────────────────────────────────────────────────
 

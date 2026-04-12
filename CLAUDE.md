@@ -10,6 +10,21 @@ Users can belong to groups (x509 O field) or have no direct RBAC (groups-only). 
 
 ---
 
+## MANDATORY rules (never skip)
+
+1. **After every change — bump versions** in all three places to the same value:
+   - `image.tag` in `charts/kubevalet/values.yaml`
+   - `version` + `appVersion` in `charts/kubevalet/Chart.yaml`
+   - `image.tag` row in `README.md` key values table
+   - version references in `charts/kubevalet/README.md`
+
+2. **After every session — print the release command:**
+   ```bash
+   make release MSG="<describe changes>" VER=<new-version>
+   ```
+
+---
+
 ## Commands
 
 ### Verify before every build
@@ -25,11 +40,11 @@ make commit MSG="your message"
 
 ### Full release — image + chart (CI does all building)
 ```bash
-make release MSG="release 0.3.3" VER=0.3.3
+make release MSG="release 0.3.10" VER=0.3.10
 ```
-Creates two tags:
-- `v<VER>` → GitHub Actions builds multi-arch Docker image → pushes to DockerHub
-- `v<VER>-chart` → GitHub Actions packages Helm chart → pushes to ghcr.io → Artifact Hub
+Creates one tag `v<VER>` → GitHub Actions (`release.yml`) runs two parallel jobs:
+- `docker` → multi-arch Docker image → DockerHub
+- `chart` → Helm chart → ghcr.io → Artifact Hub
 
 Nothing is built locally. After CI finishes, deploy manually:
 ```bash
