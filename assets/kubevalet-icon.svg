@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="280" viewBox="0 0 200 280">
+
+  <!-- Card background -->
+  <rect width="200" height="280" rx="14" fill="white"/>
+  <rect width="200" height="280" rx="14" fill="none" stroke="#1e3a5f" stroke-width="2.5"/>
+  <rect x="8" y="8" width="184" height="264" rx="10" fill="none" stroke="#1e3a5f" stroke-width="0.7" opacity="0.2"/>
+
+  <!-- Center divider -->
+  <line x1="20" y1="140" x2="180" y2="140" stroke="#1e3a5f" stroke-width="0.8" opacity="0.2"/>
+
+  <!-- KEY: bow at (0,0), shaft along +y, rotated -45° and placed -->
+  <g id="key" transform="translate(60,50) rotate(-45)">
+
+    <!-- Bow (smaller) -->
+    <circle cx="0" cy="0" r="30" fill="#1e3a5f"/>
+    <circle cx="0" cy="0" r="18" fill="white"/>
+    <circle cx="0" cy="0" r="4"  fill="#326CE5"/>
+
+    <!-- Long shaft -->
+    <rect x="-7" y="29" width="14" height="81" fill="#1e3a5f"/>
+
+    <!-- Teeth: fully rectangular -->
+    <rect x="6" y="78"  width="28" height="9" fill="#1e3a5f"/>
+    <rect x="6" y="89"  width="22" height="9" fill="#1e3a5f"/>
+    <rect x="6" y="100" width="28" height="9" fill="#1e3a5f"/>
+
+  </g>
+
+  <!-- Bottom key: 180° rotation around card centre -->
+  <use href="#key" transform="rotate(180,100,140)"/>
+
+</svg>

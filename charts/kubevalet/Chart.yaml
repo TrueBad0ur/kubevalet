@@ -19,3 +19,6 @@ maintainers:
     url: https://github.com/TrueBad0ur
 annotations:
   artifacthub.io/license: MIT
+  artifacthub.io/images: |
+    - name: kubevalet
+      image: https://raw.githubusercontent.com/TrueBad0ur/kubevalet/main/assets/kubevalet-icon.svg

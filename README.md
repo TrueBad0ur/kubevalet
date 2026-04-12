@@ -1,5 +1,9 @@
 # kubevalet
 
+<p align="center">
+  <img src="assets/kubevalet-icon.svg" width="80" alt="kubevalet"/>
+</p>
+
 [![Image build](https://github.com/TrueBad0ur/kubevalet/actions/workflows/image-release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/image-release.yml)
 [![Chart release](https://github.com/TrueBad0ur/kubevalet/actions/workflows/chart-release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/chart-release.yml)
 [![Docker Image Version](https://img.shields.io/docker/v/truebad0ur/kubevalet?label=docker&sort=semver)](https://hub.docker.com/r/truebad0ur/kubevalet)
