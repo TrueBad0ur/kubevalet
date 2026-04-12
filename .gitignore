@@ -24,7 +24,7 @@ PLAN.md
 # Env / secrets
 .env
 *.env
-kubeconfig
+/kubeconfig
 *.kubeconfig
 
 # OS
