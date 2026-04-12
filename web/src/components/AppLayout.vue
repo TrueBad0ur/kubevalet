@@ -40,7 +40,7 @@
 
       <div class="sidebar-footer">
         <span>{{ username ?? '—' }}</span>
-        <button class="btn btn-ghost btn-sm" style="width:100%" @click="doLogout">Sign out</button>
+        <button class="btn btn-ghost btn-sm" @click="doLogout">Sign out</button>
       </div>
     </aside>
 

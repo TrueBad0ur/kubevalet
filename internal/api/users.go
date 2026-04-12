@@ -28,14 +28,13 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-
-	clusterCustom := len(req.Rules) > 0
-	nsScoped := len(req.NamespaceBindings) > 0
-
-	if req.ClusterRole == "" && !clusterCustom && !nsScoped {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, rules (cluster-wide), or namespaceBindings"))
+	if err := validateName(req.Name); err != nil {
+		respondError(c, http.StatusBadRequest, err)
 		return
 	}
+
+	clusterCustom := len(req.Rules) > 0
+
 	for _, nb := range req.NamespaceBindings {
 		if nb.Namespace == "" {
 			respondError(c, http.StatusBadRequest, fmt.Errorf("each namespaceBinding must have a namespace"))
@@ -72,12 +71,12 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 4. Create RBAC bindings
+	// 4. Create RBAC bindings (all optional — user may belong to groups only)
 	if req.ClusterRole != "" {
 		err = h.k8s.CreateClusterRoleBinding(ctx, req.Name, req.ClusterRole)
 	} else if clusterCustom {
 		err = h.k8s.CreateCustomClusterRole(ctx, req.Name, req.Rules)
-	} else {
+	} else if len(req.NamespaceBindings) > 0 {
 		err = h.k8s.CreateNamespaceBindings(ctx, req.Name, req.NamespaceBindings)
 	}
 	if err != nil {

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +69,3 @@ func (h *Handler) clusterServer(ctx context.Context) string {
 	return h.k8s.RestConfig.Host
 }
 
-func (h *Handler) Health(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
-}

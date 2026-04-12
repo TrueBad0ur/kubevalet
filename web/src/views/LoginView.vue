@@ -29,7 +29,7 @@
           />
         </div>
 
-        <button type="submit" class="btn btn-primary" style="width:100%" :disabled="loading">
+        <button type="submit" class="btn btn-primary" style="display:block;margin:0 auto;min-width:120px" :disabled="loading">
           <span v-if="loading" class="spinner" />
           <span v-else>Sign in</span>
         </button>

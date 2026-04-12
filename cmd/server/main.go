@@ -56,10 +56,21 @@ func main() {
 		log.Printf("admin user %q ready", cfg.AdminUsername)
 	}
 
+	if cfg.JWTSecret == "" {
+		log.Fatal("JWT_SECRET must be set (Helm auto-generates it on first install)")
+	}
+
 	// HTTP server
 	gin.SetMode(cfg.GinMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
+		c.Next()
+	})
 
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})

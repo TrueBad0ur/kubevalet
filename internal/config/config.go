@@ -19,7 +19,7 @@ type Config struct {
 	PostgresDSN string `env:"POSTGRES_DSN" envDefault:""`
 
 	// Auth
-	JWTSecret     string        `env:"JWT_SECRET"      envDefault:"change-me-in-production"`
+	JWTSecret     string        `env:"JWT_SECRET"      envDefault:""`
 	TokenTTL      time.Duration `env:"TOKEN_TTL"       envDefault:"24h"`
 	AdminUsername string        `env:"ADMIN_USERNAME"  envDefault:""`
 	AdminPassword string        `env:"ADMIN_PASSWORD"  envDefault:""`

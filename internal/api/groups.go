@@ -2,14 +2,27 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/kubevalet/kubevalet/internal/models"
 )
+
+var dnsLabelRE = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]{0,61}[a-z0-9]$|^[a-z0-9]$`)
+
+func validateName(name string) error {
+	if !dnsLabelRE.MatchString(name) {
+		return fmt.Errorf("name must be a valid DNS label (lowercase alphanumeric and hyphens, max 63 chars)")
+	}
+	return nil
+}
 
 func (h *Handler) ListGroups(c *gin.Context) {
 	rows, err := h.db.Query(c.Request.Context(), `
@@ -43,6 +56,10 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
+	if err := validateName(req.Name); err != nil {
+		respondError(c, http.StatusBadRequest, err)
+		return
+	}
 	if err := validateGroupRBAC(req.ClusterRole, req.Rules, req.NamespaceBindings); err != nil {
 		respondError(c, http.StatusBadRequest, err)
 		return
@@ -61,12 +78,14 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 	}
 
 	var id int64
+	var createdAt time.Time
 	err := h.db.QueryRow(c.Request.Context(), `
 		INSERT INTO groups (name, description, cluster_role, custom_role, rules, ns_bindings)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
-	`, req.Name, req.Description, req.ClusterRole, clusterCustom, rulesJSON, nsJSON).Scan(&id)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at
+	`, req.Name, req.Description, req.ClusterRole, clusterCustom, rulesJSON, nsJSON).Scan(&id, &createdAt)
 	if err != nil {
-		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			respondError(c, http.StatusConflict, fmt.Errorf("group %q already exists", req.Name))
 			return
 		}
@@ -98,6 +117,7 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 		CustomRole:        clusterCustom,
 		Rules:             req.Rules,
 		NamespaceBindings: req.NamespaceBindings,
+		CreatedAt:         createdAt,
 	}
 	c.JSON(http.StatusCreated, g)
 }

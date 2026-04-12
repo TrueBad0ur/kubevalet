@@ -63,8 +63,12 @@
 
             <!-- Binding type -->
             <div class="form-group">
-              <label class="form-label">Access scope <span class="required">*</span></label>
+              <label class="form-label">Access scope</label>
               <div class="radio-group">
+                <label class="radio-option">
+                  <input type="radio" v-model="bindingType" value="none" @change="advanced = false" />
+                  Groups only (no direct RBAC)
+                </label>
                 <label class="radio-option">
                   <input type="radio" v-model="bindingType" value="cluster" @change="advanced = false" />
                   Cluster-wide
@@ -238,7 +242,7 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { createUser, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
+import { createUser, type CreateUserRequest, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
 
 
@@ -285,7 +289,7 @@ const form = reactive({
   role: '',
 })
 
-const bindingType = ref<'cluster' | 'namespace'>('cluster')
+const bindingType = ref<'none' | 'cluster' | 'namespace'>('none')
 const advanced    = ref(false)
 const rules       = ref<RuleDraft[]>([emptyRule()])
 const nsBindings  = ref<NsBindingDraft[]>([emptyNsBinding()])
@@ -369,26 +373,18 @@ async function submit() {
   error.value = ''
   loading.value = true
   try {
-    let payload
+    const payload: CreateUserRequest = { name: form.name, groups: form.groups }
     if (bindingType.value === 'cluster') {
-      payload = {
-        name: form.name,
-        groups: form.groups,
-        ...(advanced.value
-          ? { rules: rules.value.map(draftToRule) }
-          : { clusterRole: form.clusterRole }),
+      if (advanced.value) {
+        payload.rules = rules.value.map(draftToRule)
+      } else {
+        payload.clusterRole = form.clusterRole
       }
-    } else {
-      payload = {
-        name: form.name,
-        groups: form.groups,
-        namespaceBindings: nsBindings.value.map(nb => ({
-          namespace: nb.namespace,
-          ...(nb.advanced
-            ? { rules: nb.rules.map(draftToRule) }
-            : { role: nb.role }),
-        })) as NamespaceBinding[],
-      }
+    } else if (bindingType.value === 'namespace') {
+      payload.namespaceBindings = nsBindings.value.map(nb => ({
+        namespace: nb.namespace,
+        ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+      })) as NamespaceBinding[]
     }
     result.value = await createUser(payload)
   } catch (e: any) {
