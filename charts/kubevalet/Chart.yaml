@@ -1,0 +1,24 @@
+apiVersion: v2
+name: kubevalet
+description: Lightweight Kubernetes user management — x509 users, RBAC groups, kubeconfigs via a web UI
+type: application
+version: 0.3.2
+appVersion: "0.3.2"
+keywords:
+  - kubernetes
+  - users
+  - rbac
+  - kubeconfig
+  - x509
+  - groups
+home: https://github.com/TrueBad0ur/kubevalet
+sources:
+  - https://github.com/TrueBad0ur/kubevalet
+maintainers:
+  - name: TrueBad0ur
+    url: https://github.com/TrueBad0ur
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/signKey: |
+    fingerprint: ""
+    url: ""

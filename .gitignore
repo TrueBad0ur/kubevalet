@@ -1,6 +1,6 @@
 # Binaries
 tmp/
-kubevalet
+/kubevalet
 dist/
 bin/
 

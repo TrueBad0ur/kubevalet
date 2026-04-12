@@ -1,0 +1,27 @@
+kubevalet has been deployed!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Access the UI:
+
+  {{- if .Values.ingress.enabled }}
+  URL: http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+  {{- else if eq .Values.service.type "NodePort" }}
+  export NODE_PORT=$(kubectl get svc {{ include "kubevalet.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}")
+  export NODE_IP=$(kubectl get nodes -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "http://$NODE_IP:$NODE_PORT"
+  {{- else }}
+  kubectl port-forward svc/{{ include "kubevalet.fullname" . }} 8080:80 -n {{ .Release.Namespace }}
+  Then open: http://localhost:8080
+  {{- end }}
+
+  Default credentials:
+    Username: {{ .Values.auth.adminUsername }}
+    Password: (set in auth.adminPassword)
+
+  ⚠  Remember to set proper values in production:
+    - auth.adminPassword  (change immediately after first login)
+    - cluster.server      (override if users need external API server URL in kubeconfig;
+                           defaults to https://kubernetes.default.svc.cluster.local)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

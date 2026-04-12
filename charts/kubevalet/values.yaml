@@ -1,0 +1,114 @@
+## kubevalet Helm chart values
+## Override these in your own values file or with --set
+
+replicaCount: 1
+
+image:
+  repository: truebad0ur/kubevalet
+  tag: "0.3.2"
+  pullPolicy: IfNotPresent
+
+## Kubernetes cluster info embedded in generated kubeconfigs.
+cluster:
+  name: kubernetes
+  ## Set to the external API server address users will connect to.
+  ## Can also be changed at runtime in the Settings UI (stored in DB, no redeploy needed).
+  server: "https://kubernetes.default.svc.cluster.local"
+
+## Auth
+auth:
+  ## jwtSecret: auto-generated (32-char random string) on first install and stored in the
+  ## release Secret. Preserved across helm upgrades via Secret lookup.
+  ## Override only if you need a fixed value (e.g. multi-replica deployments or external secret manager).
+  jwtSecret: ""
+
+  ## JWT token lifetime. Users must re-login after expiry.
+  tokenTTL: 24h
+
+  ## Initial admin user created once when the admin_users table is empty.
+  ## Leave adminUsername blank to skip seeding entirely.
+  ## ⚠ Change adminPassword before exposing the service externally.
+  adminUsername: admin
+  adminPassword: "admin"
+
+## PostgreSQL — bundled StatefulSet (set enabled: false to use an external instance)
+postgres:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "17-alpine"
+  database: kubevalet
+  user: kubevalet
+
+  ## password: auto-generated (24-char random string) on first install and stored in the
+  ## release Secret. Preserved across helm upgrades via Secret lookup.
+  ## Override to use a fixed password (e.g. when migrating data or using an external secret).
+  ## Note: changing this after first install requires manual DB password rotation.
+  password: ""
+
+  persistence:
+    enabled: false        # set true when a StorageClass is available; data is lost on pod restart otherwise
+    size: 2Gi
+    storageClassName: ""  # leave empty for default StorageClass
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  ## Only used when postgres.enabled is false
+  external:
+    dsn: ""  # e.g. postgres://user:pass@host:5432/kubevalet?sslmode=require
+
+## Service
+service:
+  type: ClusterIP
+  port: 80
+
+## Ingress
+## ⚠ Always enable TLS in production — JWT tokens and admin credentials are transmitted in plain HTTP otherwise.
+ingress:
+  enabled: false
+  className: nginx
+  host: kubevalet.example.com
+  annotations: {}
+    ## Recommended annotations for nginx ingress:
+    # nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  tls: []
+  #  - secretName: kubevalet-tls
+  #    hosts:
+  #      - kubevalet.example.com
+
+## Resource requests/limits for the kubevalet container
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+serviceAccount:
+  ## Override the generated service account name (leave empty to use the chart-generated name)
+  name: ""
+
+## Extra environment variables injected into the kubevalet container
+extraEnv: []
+# - name: GIN_MODE
+#   value: debug
+
+## NetworkPolicy — restrict pod-to-pod traffic (deny-all except postgres, k8s API, DNS).
+## Requires a CNI plugin that enforces NetworkPolicy (Calico, Cilium, Weave, etc.).
+## Has no effect with kubenet/flannel without policy enforcement.
+networkPolicy:
+  enabled: false
+
+## Node selector, tolerations, affinity
+nodeSelector: {}
+tolerations: []
+affinity: {}
