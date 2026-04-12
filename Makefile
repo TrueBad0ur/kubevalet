@@ -102,6 +102,7 @@ endif
 	git config core.hooksPath .githooks
 	git add charts/kubevalet/Chart.yaml charts/kubevalet/values.yaml README.md charts/kubevalet/README.md
 	git commit -m "release version $(VER)"
+	git pull --rebase
 	git push --set-upstream origin $$(git branch --show-current)
 
 # Usage: make release VER=0.3.13
