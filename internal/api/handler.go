@@ -37,6 +37,7 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.DELETE("/users/:name", h.DeleteUser)
 	protected.GET("/users/:name/kubeconfig", h.DownloadKubeconfig)
 	protected.POST("/users/:name/sync", h.SyncUser)
+	protected.POST("/users/:name/renew", h.RenewCertificate)
 	protected.GET("/settings", h.GetSettings)
 	protected.PUT("/settings", h.UpdateSettings)
 	protected.PUT("/settings/password", h.ChangePassword)

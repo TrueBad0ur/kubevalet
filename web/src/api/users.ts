@@ -22,6 +22,12 @@ export interface User {
   namespaceBindings?: NamespaceBinding[]
   status: string
   createdAt: string
+  certExpiresAt?: string
+}
+
+export interface RenewCertificateResponse {
+  kubeconfig: string
+  certExpiresAt: string
 }
 
 export interface CreateUserRequest {
@@ -73,5 +79,10 @@ export function kubeconfigUrl(name: string): string {
 
 export async function syncUser(name: string): Promise<{ repaired: string[] }> {
   const res = await client.post<{ repaired: string[] }>(`/users/${name}/sync`)
+  return res.data
+}
+
+export async function renewCertificate(name: string): Promise<RenewCertificateResponse> {
+  const res = await client.post<RenewCertificateResponse>(`/users/${name}/renew`)
   return res.data
 }

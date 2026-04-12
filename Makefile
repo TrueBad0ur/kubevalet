@@ -9,7 +9,7 @@ PLATFORMS := linux/amd64,linux/arm64
         docker-build docker-push docker-buildx docker-buildx-push \
         buildx-setup \
         helm-lint helm-package \
-        hooks-setup commit release
+        hooks-setup commit bump release
 
 ## ── Local dev ────────────────────────────────────────────────────────────────
 
@@ -84,22 +84,35 @@ endif
 	git config core.hooksPath .githooks
 	git add .
 	git diff --cached --quiet || git commit -m "$(MSG)"
-	git push
+	git push --set-upstream origin $$(git branch --show-current)
 
-# Usage: make release MSG="your message" VER=0.3.10
-# Commits, pushes, creates one tag v<VER> →
-#   GitHub Actions: Docker image → DockerHub + Helm chart → ghcr.io → Artifact Hub
-release:
-ifndef MSG
-	$(error MSG is required, e.g.: make release MSG="release 0.3.10" VER=0.3.10)
-endif
+# Usage: make bump VER=0.3.13
+# Bumps version in all 4 files and commits "release version 0.3.13".
+# Run this as the last commit on a feature branch before opening a PR.
+bump:
 ifndef VER
-	$(error VER is required, e.g.: make release MSG="release 0.3.10" VER=0.3.10)
+	$(error VER is required, e.g.: make bump VER=0.3.13)
+endif
+	@CURRENT=$$(grep -m1 '^version:' charts/kubevalet/Chart.yaml | awk '{print $$2}'); \
+	sed -i "s/^version: .*/version: $(VER)/" charts/kubevalet/Chart.yaml; \
+	sed -i "s/^appVersion: .*/appVersion: \"$(VER)\"/" charts/kubevalet/Chart.yaml; \
+	sed -i "s/tag: \"$$CURRENT\"/tag: \"$(VER)\"/" charts/kubevalet/values.yaml; \
+	sed -i "s/\`$$CURRENT\`/\`$(VER)\`/" README.md; \
+	sed -i "s/--version $$CURRENT/--version $(VER)/g" charts/kubevalet/README.md
+	git config core.hooksPath .githooks
+	git add charts/kubevalet/Chart.yaml charts/kubevalet/values.yaml README.md charts/kubevalet/README.md
+	git commit -m "release version $(VER)"
+	git push --set-upstream origin $$(git branch --show-current)
+
+# Usage: make release VER=0.3.13
+# Tags HEAD as v<VER> and pushes the tag →
+#   GitHub Actions: Docker image → DockerHub + Helm chart → ghcr.io → Artifact Hub
+# Run on main after the PR (with bump commit) is merged.
+release:
+ifndef VER
+	$(error VER is required, e.g.: make release VER=0.3.13)
 endif
 	git config core.hooksPath .githooks
-	git add .
-	git diff --cached --quiet || git commit -m "$(MSG)"
-	git push
 	git tag -d v$(VER) 2>/dev/null || true
 	git push origin :refs/tags/v$(VER) 2>/dev/null || true
 	git tag v$(VER)

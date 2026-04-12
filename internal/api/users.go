@@ -107,6 +107,11 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
+	var expiresAt *time.Time
+	if t, err := cert.ParseExpiry(certPEM); err == nil {
+		expiresAt = &t
+	}
+
 	c.JSON(http.StatusCreated, models.CreateUserResponse{
 		User: models.User{
 			Name:              req.Name,
@@ -116,6 +121,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 			NamespaceBindings: req.NamespaceBindings,
 			Status:            "Active",
 			CreatedAt:         time.Now().UTC(),
+			CertExpiresAt:     expiresAt,
 		},
 		Kubeconfig: string(kubeconfigYAML),
 	})
@@ -139,8 +145,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	// 2. Read from postgres
 	rows, err := h.db.Query(ctx, `
-		SELECT name, groups, cluster_role, custom_role, rules, ns_bindings,
-		       cert_pem != '' AS has_cert, created_at
+		SELECT name, groups, cluster_role, custom_role, rules, ns_bindings, cert_pem, created_at
 		FROM users ORDER BY name
 	`)
 	if err != nil {
@@ -160,10 +165,10 @@ func (h *Handler) ListUsers(c *gin.Context) {
 			customRole  bool
 			rulesJSON   []byte
 			nsJSON      []byte
-			hasCert     bool
+			certPEM     string
 			createdAt   time.Time
 		)
-		if err := rows.Scan(&name, &groups, &clusterRole, &customRole, &rulesJSON, &nsJSON, &hasCert, &createdAt); err != nil {
+		if err := rows.Scan(&name, &groups, &clusterRole, &customRole, &rulesJSON, &nsJSON, &certPEM, &createdAt); err != nil {
 			continue
 		}
 		dbNames[name] = true
@@ -177,8 +182,15 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		status := "Active"
 		if csr, ok := csrByName[name]; ok {
 			status = csrStatusString(csr)
-		} else if !hasCert {
+		} else if certPEM == "" {
 			status = "Pending"
+		}
+
+		var expiresAt *time.Time
+		if certPEM != "" {
+			if t, err := cert.ParseExpiry([]byte(certPEM)); err == nil {
+				expiresAt = &t
+			}
 		}
 
 		users = append(users, models.User{
@@ -190,6 +202,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 			NamespaceBindings: nsBindings,
 			Status:            status,
 			CreatedAt:         createdAt,
+			CertExpiresAt:     expiresAt,
 		})
 	}
 	rows.Close()
@@ -601,6 +614,13 @@ func (h *Handler) importCSRUser(ctx context.Context, csr certificatesv1.Certific
 	_ = h.upsertUserDB(ctx, username, groups, clusterRole, isClusterCustom,
 		rules, nsBindings, certPEM, string(privateKey))
 
+	var expiresAt *time.Time
+	if certPEM != "" {
+		if t, err := cert.ParseExpiry([]byte(certPEM)); err == nil {
+			expiresAt = &t
+		}
+	}
+
 	return &models.User{
 		Name:              username,
 		Groups:            groups,
@@ -610,6 +630,7 @@ func (h *Handler) importCSRUser(ctx context.Context, csr certificatesv1.Certific
 		NamespaceBindings: nsBindings,
 		Status:            csrStatusString(csr),
 		CreatedAt:         csr.CreationTimestamp.Time,
+		CertExpiresAt:     expiresAt,
 	}
 }
 
@@ -739,6 +760,86 @@ func groupsChanged(old, new []string) bool {
 		}
 	}
 	return false
+}
+
+// ── Renew certificate ─────────────────────────────────────────────────────────
+
+func (h *Handler) RenewCertificate(c *gin.Context) {
+	username := c.Param("name")
+	ctx := c.Request.Context()
+
+	var (
+		groups      []string
+		clusterRole string
+		customRole  bool
+		rulesJSON   []byte
+		nsJSON      []byte
+	)
+	err := h.db.QueryRow(ctx, `
+		SELECT groups, cluster_role, custom_role, rules, ns_bindings
+		FROM users WHERE name=$1
+	`, username).Scan(&groups, &clusterRole, &customRole, &rulesJSON, &nsJSON)
+	if err != nil {
+		respondError(c, http.StatusNotFound, fmt.Errorf("user %q not found", username))
+		return
+	}
+
+	var rules []models.PolicyRule
+	var nsBindings []models.NamespaceBinding
+	_ = json.Unmarshal(rulesJSON, &rules)
+	_ = json.Unmarshal(nsJSON, &nsBindings)
+
+	kp, err := cert.Generate(username, groups)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := h.k8s.DeleteCSR(ctx, username); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	ann := buildAnnotationsFromFields(groups, clusterRole, customRole, len(nsBindings) > 0, nsBindings)
+	certPEM, err := h.k8s.SubmitAndApproveCSR(ctx, username, kp.CSRPEM, ann)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	_ = h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace)
+	if err := h.k8s.StorePrivateKey(ctx, username, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	_ = h.upsertUserDB(ctx, username, groups, clusterRole, customRole, rules, nsBindings,
+		string(certPEM), string(kp.PrivateKeyPEM))
+
+	caData, err := h.k8s.GetCAData()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
+		Username:      username,
+		ClusterName:   h.cfg.ClusterName,
+		ClusterServer: h.clusterServer(ctx),
+		ClusterCA:     caData,
+		ClientCert:    certPEM,
+		ClientKey:     kp.PrivateKeyPEM,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	expiresAt, _ := cert.ParseExpiry(certPEM)
+	c.JSON(http.StatusOK, models.RenewCertificateResponse{
+		Kubeconfig:    string(kubeconfigYAML),
+		CertExpiresAt: expiresAt,
+	})
 }
 
 func csrStatusString(csr certificatesv1.CertificateSigningRequest) string {
