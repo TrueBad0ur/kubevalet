@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/kubevalet/kubevalet/internal/models"
 )
@@ -102,7 +103,7 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 	} else if nsScoped {
 		err = h.k8s.CreateGroupNamespaceBindings(ctx, req.Name, req.NamespaceBindings)
 	}
-	if err != nil {
+	if err != nil && !k8serrors.IsAlreadyExists(err) {
 		// Roll back DB insert
 		_, _ = h.db.Exec(c.Request.Context(), "DELETE FROM groups WHERE id=$1", id)
 		respondError(c, http.StatusInternalServerError, err)
