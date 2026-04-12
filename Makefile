@@ -113,6 +113,8 @@ ifndef VER
 	$(error VER is required, e.g.: make release VER=0.3.13)
 endif
 	git config core.hooksPath .githooks
+	git checkout main
+	git pull
 	git tag -d v$(VER) 2>/dev/null || true
 	git push origin :refs/tags/v$(VER) 2>/dev/null || true
 	git tag v$(VER)
