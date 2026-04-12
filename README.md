@@ -101,7 +101,7 @@ kubectl port-forward svc/kubevalet 8080:80 -n kubevalet
 
 | Value | Default | Description |
 |---|---|---|
-| `image.tag` | `0.3.7` | Image tag |
+| `image.tag` | `0.3.9` | Image tag |
 | `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to (can also be changed at runtime in Settings UI) |
 | `cluster.name` | `kubernetes` | Cluster name in kubeconfig context |
 | `auth.adminPassword` | `admin` | Initial admin password |
