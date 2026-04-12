@@ -4,8 +4,7 @@
   <img src="assets/kubevalet-icon.svg" width="80" alt="kubevalet"/>
 </p>
 
-[![Image build](https://github.com/TrueBad0ur/kubevalet/actions/workflows/image-release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/image-release.yml)
-[![Chart release](https://github.com/TrueBad0ur/kubevalet/actions/workflows/chart-release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/chart-release.yml)
+[![Release](https://github.com/TrueBad0ur/kubevalet/actions/workflows/release.yml/badge.svg)](https://github.com/TrueBad0ur/kubevalet/actions/workflows/release.yml)
 [![Docker Image Version](https://img.shields.io/docker/v/truebad0ur/kubevalet?label=docker&sort=semver)](https://hub.docker.com/r/truebad0ur/kubevalet)
 [![Docker Pulls](https://img.shields.io/docker/pulls/truebad0ur/kubevalet)](https://hub.docker.com/r/truebad0ur/kubevalet)
 [![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/kubevalet)](https://artifacthub.io/packages/helm/kubevalet/kubevalet)
@@ -101,7 +100,7 @@ kubectl port-forward svc/kubevalet 8080:80 -n kubevalet
 
 | Value | Default | Description |
 |---|---|---|
-| `image.tag` | `0.3.11` | Image tag |
+| `image.tag` | `0.3.12` | Image tag |
 | `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to (can also be changed at runtime in Settings UI) |
 | `cluster.name` | `kubernetes` | Cluster name in kubeconfig context |
 | `auth.adminPassword` | `admin` | Initial admin password |
@@ -138,3 +137,4 @@ make build
 - [ ] User expiry / certificate rotation reminders
 - [ ] Role templates (save and reuse custom RBAC configs)
 - [ ] LDAP sync
+- [ ] CVE scanning in CI (Trivy)
