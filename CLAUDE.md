@@ -18,27 +18,24 @@ go build ./...
 ```
 There is no local frontend build step — `vue-tsc` and `vite build` run inside Docker. TypeScript errors **will break the Docker build**, so read TS changes carefully before pushing.
 
-### Build + push multi-arch image (amd64 + arm64)
-```bash
-make docker-buildx-push TAG=<version>
-```
-
-### Deploy to Kubernetes
-```bash
-KUBECONFIG=/home/kick/.kube/local-config helm upgrade kubevalet ./charts/kubevalet -n kubevalet --reuse-values --set image.tag=<version>
-KUBECONFIG=/home/kick/.kube/local-config kubectl rollout status deployment/kubevalet -n kubevalet
-```
-
-### Commit and push
+### Commit and push (no release)
 ```bash
 make commit MSG="your message"
 ```
 
-### Commit + push + release chart to Artifact Hub (ghcr.io OCI)
+### Full release — image + chart (CI does all building)
 ```bash
-make chart-release MSG="your message" CHART_TAG=<version>
+make release MSG="release 0.3.3" VER=0.3.3
 ```
-This tags `chart-v<version>`, which triggers GitHub Actions → packages chart → pushes to `ghcr.io/truebad0ur/kubevalet` → Artifact Hub picks it up automatically.
+Creates two tags:
+- `v<VER>` → GitHub Actions builds multi-arch Docker image → pushes to DockerHub
+- `chart-v<VER>` → GitHub Actions packages Helm chart → pushes to ghcr.io → Artifact Hub
+
+Nothing is built locally. After CI finishes, deploy manually:
+```bash
+KUBECONFIG=/home/kick/.kube/local-config helm upgrade kubevalet ./charts/kubevalet -n kubevalet --reuse-values --set image.tag=<version>
+KUBECONFIG=/home/kick/.kube/local-config kubectl rollout status deployment/kubevalet -n kubevalet
+```
 
 ### Run tests
 ```bash
@@ -58,17 +55,24 @@ go mod tidy       # tidy dependencies
 
 1. Edit `internal/` (Go) and/or `web/src/` (Vue/TS) and/or `charts/kubevalet/`
 2. `go build ./...` — must be clean
-3. Bump `image.tag` in `charts/kubevalet/values.yaml` (current version is the value already there)
-4. `make docker-buildx-push TAG=<new-tag>`
-5. `KUBECONFIG=/home/kick/.kube/local-config helm upgrade kubevalet ./charts/kubevalet -n kubevalet --reuse-values --set image.tag=<new-tag>`
-6. `KUBECONFIG=/home/kick/.kube/local-config kubectl rollout status deployment/kubevalet -n kubevalet`
+3. Bump `image.tag` in `charts/kubevalet/values.yaml` and `version`/`appVersion` in `charts/kubevalet/Chart.yaml`
 
-After build and deploy, always print:
+**If releasing a new version (building happens entirely in CI):**
 ```
-make commit MSG="<describe changes>" 
-# or, if chart version also changed:
-make chart-release MSG="<describe changes>" CHART_TAG=<new-tag>
+make release MSG="<describe changes>" VER=<new-version>
 ```
+Then wait for GitHub Actions to finish, and deploy:
+```
+KUBECONFIG=/home/kick/.kube/local-config helm upgrade kubevalet ./charts/kubevalet -n kubevalet --reuse-values --set image.tag=<new-version>
+KUBECONFIG=/home/kick/.kube/local-config kubectl rollout status deployment/kubevalet -n kubevalet
+```
+
+**If just committing without a release:**
+```
+make commit MSG="<describe changes>"
+```
+
+After every session always print the appropriate command above.
 
 ---
 

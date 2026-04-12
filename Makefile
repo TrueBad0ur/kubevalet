@@ -9,7 +9,7 @@ PLATFORMS := linux/amd64,linux/arm64
         docker-build docker-push docker-buildx docker-buildx-push \
         buildx-setup \
         helm-lint helm-package \
-        commit chart-release
+        commit release chart-release
 
 ## ── Local dev ────────────────────────────────────────────────────────────────
 
@@ -80,8 +80,27 @@ endif
 	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push
 
+# Usage: make release MSG="your message" VER=0.3.2
+# Commits, pushes, then creates both tags:
+#   v<VER>       → GitHub Actions builds Docker image → pushes to DockerHub
+#   chart-v<VER> → GitHub Actions packages Helm chart → pushes to ghcr.io → Artifact Hub
+release:
+ifndef MSG
+	$(error MSG is required, e.g.: make release MSG="release 0.3.3" VER=0.3.3)
+endif
+ifndef VER
+	$(error VER is required, e.g.: make release MSG="release 0.3.3" VER=0.3.3)
+endif
+	git add .
+	git diff --cached --quiet || git commit -m "$(MSG)"
+	git push
+	git tag v$(VER)
+	git push origin v$(VER)
+	git tag chart-v$(VER)
+	git push origin chart-v$(VER)
+
 # Usage: make chart-release MSG="your commit message" CHART_TAG=0.3.2
-# Commits, pushes, then tags the chart release (triggers GitHub Actions → ghcr.io → Artifact Hub)
+# Commits, pushes, then tags the chart release only (triggers GitHub Actions → ghcr.io → Artifact Hub)
 chart-release:
 ifndef MSG
 	$(error MSG is required, e.g.: make chart-release MSG="release chart 0.3.2" CHART_TAG=0.3.2)
