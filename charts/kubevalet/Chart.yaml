@@ -2,8 +2,8 @@ apiVersion: v2
 name: kubevalet
 description: Lightweight Kubernetes user management — x509 users, RBAC groups, kubeconfigs via a web UI
 type: application
-version: 0.3.6
-appVersion: "0.3.6"
+version: 0.3.7
+appVersion: "0.3.7"
 keywords:
   - kubernetes
   - users

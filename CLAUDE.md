@@ -29,7 +29,7 @@ make release MSG="release 0.3.3" VER=0.3.3
 ```
 Creates two tags:
 - `v<VER>` → GitHub Actions builds multi-arch Docker image → pushes to DockerHub
-- `chart-v<VER>` → GitHub Actions packages Helm chart → pushes to ghcr.io → Artifact Hub
+- `v<VER>-chart` → GitHub Actions packages Helm chart → pushes to ghcr.io → Artifact Hub
 
 Nothing is built locally. After CI finishes, deploy manually:
 ```bash
@@ -185,7 +185,7 @@ To release a new chart version:
 1. Bump `version` and `appVersion` in `charts/kubevalet/Chart.yaml`
 2. `make chart-release MSG="..." CHART_TAG=<version>`
 
-GitHub Actions (`.github/workflows/chart-release.yml`) triggers on `chart-v*` tags, packages the chart and pushes to ghcr.io. Artifact Hub polls automatically.
+GitHub Actions (`.github/workflows/chart-release.yml`) triggers on `v*-chart` tags, packages the chart and pushes to ghcr.io. Artifact Hub polls automatically.
 
 ---
 

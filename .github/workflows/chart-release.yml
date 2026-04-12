@@ -3,7 +3,7 @@ name: Release Helm chart
 on:
   push:
     tags:
-      - "chart-v*"   # trigger: git tag chart-v0.3.3 && git push --tags
+      - "v*-chart"   # trigger: git tag v0.3.6-chart && git push --tags
 
 env:
   REGISTRY: ghcr.io
@@ -30,7 +30,7 @@ jobs:
       - name: Extract chart version and lowercase owner
         id: meta
         run: |
-          echo "version=${GITHUB_REF_NAME#chart-v}" >> "$GITHUB_OUTPUT"
+          echo "version=${GITHUB_REF_NAME%-chart}" >> "$GITHUB_OUTPUT"
           echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
       - name: Lint chart
