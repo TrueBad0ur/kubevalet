@@ -27,6 +27,18 @@ Creates x509 users via the Kubernetes CSR API, issues kubeconfigs, and manages R
 - Private keys stored in cluster Secrets and postgres — never logged or exposed raw
 - Simple username/password auth backed by PostgreSQL
 
+## Screenshots
+
+| Users | Groups |
+|-------|--------|
+| ![Users](assets/screenshot1.png) | ![Groups](assets/screenshot2.png) |
+
+| Graph — all users | Graph — group filter |
+|-------------------|----------------------|
+| ![Graph all](assets/screenshot3.png) | ![Graph group](assets/screenshot4.png) |
+
+![Settings](assets/screenshot5.png)
+
 ## Structure
 
 ```

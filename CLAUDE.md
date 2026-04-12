@@ -36,16 +36,22 @@ go build ./...
 ```
 There is no local frontend build step — `vue-tsc` and `vite build` run inside Docker. TypeScript errors **will break the Docker build**, so read TS changes carefully before pushing.
 
-### Commit and push (no release)
+### Commit and push
 ```bash
 make commit MSG="your message"
 ```
 
-### Full release — image + chart (CI does all building)
+### Bump version (last commit on feature branch before PR)
 ```bash
-make release MSG="release 0.3.10" VER=0.3.10
+make bump VER=0.3.13
 ```
-Creates one tag `v<VER>` → GitHub Actions (`release.yml`) runs two parallel jobs:
+Updates all 4 version locations, commits `"release version 0.3.13"`, pushes.
+
+### Release (on main after PR merge — tags HEAD, triggers CI)
+```bash
+make release VER=0.3.13
+```
+Creates tag `v0.3.13` → GitHub Actions (`release.yml`) runs two parallel jobs:
 - `docker` → multi-arch Docker image → DockerHub
 - `chart` → Helm chart → ghcr.io → Artifact Hub
 
@@ -66,31 +72,6 @@ go test ./internal/api/... -run TestName  # single test
 make helm-lint    # lint Helm chart
 go mod tidy       # tidy dependencies
 ```
-
----
-
-## Iteration checklist (every code change)
-
-1. Edit `internal/` (Go) and/or `web/src/` (Vue/TS) and/or `charts/kubevalet/`
-2. `go build ./...` — must be clean
-3. Bump version everywhere to the same value: `image.tag` in `values.yaml`, and both `version` + `appVersion` in `Chart.yaml` — always all three together
-
-**If releasing a new version (building happens entirely in CI):**
-```
-make release MSG="<describe changes>" VER=<new-version>
-```
-Then wait for GitHub Actions to finish, and deploy:
-```
-KUBECONFIG=/home/kick/.kube/local-config helm upgrade kubevalet ./charts/kubevalet -n kubevalet --reuse-values --set image.tag=<new-version>
-KUBECONFIG=/home/kick/.kube/local-config kubectl rollout status deployment/kubevalet -n kubevalet
-```
-
-**If just committing without a release:**
-```
-make commit MSG="<describe changes>"
-```
-
-After every session always print the appropriate command above.
 
 ---
 
