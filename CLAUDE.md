@@ -55,7 +55,7 @@ go mod tidy       # tidy dependencies
 
 1. Edit `internal/` (Go) and/or `web/src/` (Vue/TS) and/or `charts/kubevalet/`
 2. `go build ./...` — must be clean
-3. Bump `image.tag` in `charts/kubevalet/values.yaml` and `version`/`appVersion` in `charts/kubevalet/Chart.yaml`
+3. Bump version everywhere to the same value: `image.tag` in `values.yaml`, and both `version` + `appVersion` in `Chart.yaml` — always all three together
 
 **If releasing a new version (building happens entirely in CI):**
 ```
