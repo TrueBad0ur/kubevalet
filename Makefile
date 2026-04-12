@@ -8,7 +8,8 @@ PLATFORMS := linux/amd64,linux/arm64
         web-build \
         docker-build docker-push docker-buildx docker-buildx-push \
         buildx-setup \
-        helm-lint helm-package
+        helm-lint helm-package \
+        commit chart-release
 
 ## ── Local dev ────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,32 @@ docker-buildx-push:
 	  -t $(IMAGE):latest \
 	  --push \
 	  .
+
+## ── Git ──────────────────────────────────────────────────────────────────────
+
+# Usage: make commit MSG="your commit message"
+commit:
+ifndef MSG
+	$(error MSG is required, e.g.: make commit MSG="fix login button")
+endif
+	git add .
+	git commit -m "$(MSG)"
+	git push
+
+# Usage: make chart-release MSG="your commit message" CHART_TAG=0.3.2
+# Commits, pushes, then tags the chart release (triggers GitHub Actions → ghcr.io → Artifact Hub)
+chart-release:
+ifndef MSG
+	$(error MSG is required, e.g.: make chart-release MSG="release chart 0.3.2" CHART_TAG=0.3.2)
+endif
+ifndef CHART_TAG
+	$(error CHART_TAG is required, e.g.: make chart-release MSG="release chart 0.3.2" CHART_TAG=0.3.2)
+endif
+	git add .
+	git commit -m "$(MSG)"
+	git push
+	git tag chart-v$(CHART_TAG)
+	git push origin chart-v$(CHART_TAG)
 
 ## ── Helm ─────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,52 @@
+name: Release Helm chart
+
+on:
+  push:
+    tags:
+      - "chart-v*"   # trigger: git tag chart-v0.3.2 && git push --tags
+
+env:
+  REGISTRY: ghcr.io
+  CHART_NAME: kubevalet
+  CHART_PATH: charts/kubevalet
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # needed to push to ghcr.io
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Extract chart version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#chart-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Lint chart
+        run: helm lint ${{ env.CHART_PATH }}
+
+      - name: Log in to ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+          helm registry login ${{ env.REGISTRY }} \
+            --username ${{ github.actor }} \
+            --password-stdin
+
+      - name: Package chart
+        run: |
+          helm package ${{ env.CHART_PATH }} \
+            --version ${{ steps.version.outputs.version }} \
+            --app-version ${{ steps.version.outputs.version }} \
+            --destination /tmp/chart-output
+
+      - name: Push chart to ghcr.io
+        run: |
+          helm push \
+            /tmp/chart-output/${{ env.CHART_NAME }}-${{ steps.version.outputs.version }}.tgz \
+            oci://${{ env.REGISTRY }}/${{ github.repository_owner }}
