@@ -77,7 +77,7 @@ ifndef MSG
 	$(error MSG is required, e.g.: make commit MSG="fix login button")
 endif
 	git add .
-	git commit -m "$(MSG)"
+	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push
 
 # Usage: make chart-release MSG="your commit message" CHART_TAG=0.3.2
@@ -90,8 +90,7 @@ ifndef CHART_TAG
 	$(error CHART_TAG is required, e.g.: make chart-release MSG="release chart 0.3.2" CHART_TAG=0.3.2)
 endif
 	git add .
-	git commit -m "$(MSG)"
-	git push
+	git diff --cached --quiet || git commit -m "$(MSG)" && git push
 	git tag chart-v$(CHART_TAG)
 	git push origin chart-v$(CHART_TAG)
 
