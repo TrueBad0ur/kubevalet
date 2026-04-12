@@ -4,8 +4,10 @@
       <button class="btn btn-primary" @click="openCreate">+ New Group</button>
     </template>
 
-    <div v-if="loadError" class="alert alert-error">{{ loadError }}</div>
-    <div v-if="syncMsg"   class="alert alert-success">{{ syncMsg }}</div>
+    <Teleport to="body">
+      <div v-if="loadError" class="toast toast-error">{{ loadError }}</div>
+      <div v-if="syncMsg"   class="toast toast-success">{{ syncMsg }}</div>
+    </Teleport>
 
     <div class="card">
       <div class="card-header">

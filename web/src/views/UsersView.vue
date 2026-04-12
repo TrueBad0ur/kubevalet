@@ -7,8 +7,10 @@
       </RouterLink>
     </template>
 
-    <div v-if="error" class="alert alert-error">{{ error }}</div>
-    <div v-if="editSuccessMsg" class="alert alert-success">{{ editSuccessMsg }}</div>
+    <Teleport to="body">
+      <div v-if="error" class="toast toast-error">{{ error }}</div>
+      <div v-if="editSuccessMsg" class="toast toast-success">{{ editSuccessMsg }}</div>
+    </Teleport>
 
     <div class="card">
       <div v-if="loading" style="padding:40px;text-align:center">
@@ -29,8 +31,8 @@
                 Name <span class="sort-indicator">{{ sortKey === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
               <th>Groups</th>
-              <th>Binding</th>
-              <th>Status <span style="font-size:11px;font-weight:400;color:var(--text-muted)" title="Active = certificate issued and valid">(?)</span></th>
+              <th>Access</th>
+              <th>Status</th>
               <th @click="setSort('createdAt')" style="cursor:pointer;user-select:none;white-space:nowrap">
                 Created <span class="sort-indicator">{{ sortKey === 'createdAt' ? (sortDir === 'asc' ? '↑' : '↓') : '↕' }}</span>
               </th>
@@ -39,52 +41,49 @@
           </thead>
           <tbody>
             <tr v-for="u in sortedUsers" :key="u.name">
-              <td class="font-mono">{{ u.name }}</td>
+              <td class="font-mono" style="font-weight:600">{{ u.name }}</td>
+
+              <!-- Groups: max 2 visible, rest collapsed -->
               <td>
-                <span v-if="u.groups?.length" class="flex gap-2" style="flex-wrap:wrap">
-                  <span v-for="g in u.groups" :key="g" class="badge badge-info">{{ g }}</span>
-                </span>
-                <span v-else class="text-muted text-sm">—</span>
-              </td>
-              <td>
-                <span v-if="u.customRole" class="badge badge-gray"
-                  style="cursor:pointer" @click="openClusterRules(u)" title="Click to view rules">
-                  cluster / custom ▾
-                </span>
-                <span v-else-if="u.clusterRole" class="badge badge-gray">cluster / {{ u.clusterRole }}</span>
-                <div v-else-if="u.namespaceBindings?.length" class="flex gap-1" style="flex-wrap:wrap">
-                  <span v-for="nb in u.namespaceBindings" :key="nb.namespace"
-                    class="badge badge-gray"
-                    :style="nb.customRole ? 'cursor:pointer' : ''"
-                    @click="nb.customRole && openNsRules(u, nb)"
-                    :title="nb.customRole ? 'Click to view rules' : undefined">
-                    {{ nb.namespace }} / {{ nb.customRole ? 'custom ▾' : nb.role }}
+                <template v-if="u.groups?.length">
+                  <span class="flex gap-2" style="flex-wrap:wrap;align-items:center">
+                    <span v-for="g in u.groups.slice(0,2)" :key="g" class="badge badge-info">{{ g }}</span>
+                    <span v-if="u.groups.length > 2" class="text-muted text-sm">+{{ u.groups.length - 2 }}</span>
                   </span>
-                </div>
+                </template>
                 <span v-else class="text-muted text-sm">—</span>
               </td>
+
+              <!-- Access: compact summary only — details in Graph -->
+              <td>
+                <span v-if="u.clusterRole" class="badge" :class="accessRoleClass(u.clusterRole)">{{ u.clusterRole }}</span>
+                <span v-else-if="u.customRole && !u.namespaceBindings?.length" class="badge badge-purple">custom</span>
+                <span v-else-if="u.namespaceBindings?.length" class="text-muted text-sm">
+                  {{ u.namespaceBindings.length }} namespace{{ u.namespaceBindings.length !== 1 ? 's' : '' }}
+                </span>
+                <span v-else class="text-muted text-sm">—</span>
+              </td>
+
               <td>
                 <span class="badge" :class="statusClass(u.status)">{{ u.status }}</span>
               </td>
               <td class="text-muted text-sm">{{ formatDate(u.createdAt) }}</td>
-              <td>
-                <div class="flex gap-2">
+
+              <!-- Actions: primary = Edit, Kubeconfig, Delete; secondary = Sync icon -->
+              <td style="white-space:nowrap">
+                <div class="flex gap-2" style="align-items:center">
                   <button class="btn btn-ghost btn-sm" @click="openEdit(u)">Edit</button>
                   <button class="btn btn-ghost btn-sm" @click="viewKubeconfig(u.name)" :disabled="viewing === u.name">
                     <span v-if="viewing === u.name" class="spinner" />
-                    <span v-else>View</span>
+                    <span v-else>Kubeconfig</span>
                   </button>
-                  <button class="btn btn-ghost btn-sm" @click="downloadKubeconfig(u.name)" :disabled="downloading === u.name">
-                    <span v-if="downloading === u.name" class="spinner" />
-                    <template v-else>
-                      <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
-                      kubeconfig
-                    </template>
-                  </button>
-                  <button class="btn btn-ghost btn-sm" @click="doSync(u.name)" :disabled="syncing === u.name"
-                    title="Recreate missing k8s objects from database">
-                    <span v-if="syncing === u.name" class="spinner" />
-                    <span v-else>Sync</span>
+                  <!-- Sync: icon-only, unobtrusive -->
+                  <button class="btn btn-ghost btn-sm btn-icon" @click="doSync(u.name)" :disabled="syncing === u.name"
+                    title="Sync: recreate missing k8s objects from database" style="color:var(--text-muted)">
+                    <span v-if="syncing === u.name" class="spinner" style="width:14px;height:14px" />
+                    <svg v-else width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/>
+                    </svg>
                   </button>
                   <button class="btn btn-danger btn-sm" @click="confirmDelete(u.name)" :disabled="deleting === u.name">
                     <span v-if="deleting === u.name" class="spinner" />
@@ -131,7 +130,7 @@
           </div>
           <form @submit.prevent="submitEdit">
 
-            <div class="form-group">
+            <div class="form-group" style="position:relative">
               <label class="form-label">Groups</label>
               <div class="tags-input" @click="editGroupInput?.focus()">
                 <span v-for="g in editGroups" :key="g" class="tag">
@@ -142,13 +141,32 @@
                   ref="editGroupInput"
                   v-model="editGroupDraft"
                   type="text"
-                  placeholder="Type and press Enter…"
-                  @keydown.enter.prevent="editAddGroup"
-                  @keydown.tab.prevent="editAddGroup"
+                  placeholder="Type or select…"
+                  autocomplete="off"
+                  @keydown.enter.prevent="editDropdownActive >= 0 ? editPickSuggestion(editGroupSuggestions[editDropdownActive]) : editAddGroup()"
+                  @keydown.tab.prevent="editDropdownActive >= 0 ? editPickSuggestion(editGroupSuggestions[editDropdownActive]) : editAddGroup()"
                   @keydown.backspace="editOnBackspace"
                   @keydown.comma.prevent="editAddGroup"
-                  @blur="editAddGroup"
+                  @keydown.arrow-down.prevent="editDropdownActive = Math.min(editDropdownActive + 1, editGroupSuggestions.length - 1)"
+                  @keydown.arrow-up.prevent="editDropdownActive = Math.max(editDropdownActive - 1, 0)"
+                  @keydown.escape="editGroupDraft = ''"
+                  @blur="onEditGroupBlur"
+                  @focus="editGroupFocused = true; editDropdownVisible = true; editDropdownActive = -1"
+                  @input="editDropdownVisible = true"
                 />
+              </div>
+              <div v-if="editGroupSuggestions.length" class="group-suggestions">
+                <button
+                  v-for="(g, i) in editGroupSuggestions" :key="g.name"
+                  type="button"
+                  class="group-suggestion-item"
+                  :class="{ active: i === editDropdownActive }"
+                  @mousedown.prevent="editPickSuggestion(g)"
+                >
+                  <span class="font-mono" style="font-size:13px;font-weight:600">{{ g.name }}</span>
+                  <span v-if="g.description" class="text-muted text-sm" style="margin-left:8px">{{ g.description }}</span>
+                  <span v-if="editGroups.includes(g.name)" class="badge badge-success" style="margin-left:auto;font-size:10px">added</span>
+                </button>
               </div>
             </div>
 
@@ -376,6 +394,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { listUsers, deleteUser, updateUserRBAC, syncUser, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
+import { listGroups, type Group } from '@/api/groups'
 import { client } from '@/api/client'
 
 const EDIT_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
@@ -415,6 +434,14 @@ const loading     = ref(true)
 const error       = ref('')
 const deleting    = ref('')
 const syncing     = ref('')
+
+function accessRoleClass(role: string): string {
+  if (role === 'cluster-admin') return 'badge-danger'
+  if (role === 'admin') return 'badge-warning'
+  if (role === 'edit') return 'badge-primary-soft'
+  if (role === 'view') return 'badge-gray'
+  return 'badge-gray'
+}
 
 async function doSync(name: string) {
   syncing.value = name
@@ -493,6 +520,33 @@ const editKubeconfig    = ref('')
 const editKubeconfigUser = ref('')
 const editKubeconfigCopied = ref(false)
 const editSuccessMsg    = ref('')
+
+const allGroups = ref<Group[]>([])
+
+const editGroupFocused      = ref(false)
+const editDropdownActive    = ref(-1)
+const editDropdownVisible   = ref(false)
+const editGroupSuggestions  = computed(() => {
+  if (!editGroupFocused.value || !editDropdownVisible.value) return []
+  const q = editGroupDraft.value.trim().toLowerCase()
+  return allGroups.value.filter(g => !q || g.name.toLowerCase().includes(q))
+})
+
+function editPickSuggestion(g: Group) {
+  if (!editGroups.value.includes(g.name)) editGroups.value.push(g.name)
+  editGroupDraft.value      = ''
+  editDropdownActive.value  = -1
+  editDropdownVisible.value = false
+  editGroupInput.value?.focus()
+}
+
+function onEditGroupBlur() {
+  setTimeout(() => {
+    editGroupFocused.value    = false
+    editDropdownVisible.value = false
+    editAddGroup()
+  }, 150)
+}
 
 const editGroupsChanged = computed(() => {
   const a = [...editGroups.value].sort()
@@ -701,5 +755,8 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleString()
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  try { allGroups.value = await listGroups() } catch {}
+})
 </script>

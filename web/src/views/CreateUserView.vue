@@ -40,7 +40,8 @@
                   @keydown.arrow-up.prevent="dropdownActive = Math.max(dropdownActive - 1, 0)"
                   @keydown.escape="groupDraft = ''"
                   @blur="onGroupBlur"
-                  @focus="groupFocused = true; dropdownActive = -1"
+                  @focus="groupFocused = true; dropdownVisible = true; dropdownActive = -1"
+                  @input="dropdownVisible = true"
                 />
               </div>
               <!-- suggestions dropdown -->
@@ -313,12 +314,12 @@ const error           = ref('')
 const result          = ref<CreateUserResponse | null>(null)
 const copied          = ref(false)
 const availableGroups = ref<Group[]>([])
-const dropdownActive  = ref(-1)
-
-const groupFocused = ref(false)
+const dropdownActive   = ref(-1)
+const groupFocused     = ref(false)
+const dropdownVisible  = ref(false)
 
 const groupSuggestions = computed(() => {
-  if (!groupFocused.value || !availableGroups.value.length) return []
+  if (!groupFocused.value || !dropdownVisible.value || !availableGroups.value.length) return []
   const q = groupDraft.value.trim().toLowerCase()
   return availableGroups.value.filter(g =>
     !q || g.name.toLowerCase().includes(q) || g.description?.toLowerCase().includes(q)
@@ -340,15 +341,17 @@ function addGroup() {
 
 function pickSuggestion(g: Group) {
   if (!form.groups.includes(g.name)) form.groups.push(g.name)
-  groupDraft.value = ''
-  dropdownActive.value = -1
+  groupDraft.value    = ''
+  dropdownActive.value  = -1
+  dropdownVisible.value = false
   groupInput.value?.focus()
 }
 
 function onGroupBlur() {
   // small delay so mousedown on suggestion fires first
   setTimeout(() => {
-    groupFocused.value = false
+    groupFocused.value    = false
+    dropdownVisible.value = false
     addGroup()
   }, 150)
 }
