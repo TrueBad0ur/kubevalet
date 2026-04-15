@@ -61,18 +61,21 @@
               <td class="text-muted text-sm">{{ new Date(u.createdAt).toLocaleString() }}</td>
               <td style="white-space:nowrap">
                 <div class="flex gap-2" style="align-items:center">
-                  <!-- Role toggle: only for other users, not for 'admin' username -->
-                  <button
+                  <!-- Role select: only for other users, not for 'admin' username -->
+                  <select
                     v-if="u.username !== 'admin' && u.username !== currentUsername"
-                    class="btn btn-ghost btn-sm"
+                    class="form-input"
+                    style="width:auto;padding:3px 6px;font-size:13px;height:auto"
                     :disabled="togglingRole === u.username"
-                    @click="toggleRole(u)">
-                    <span v-if="togglingRole === u.username" class="spinner" style="width:12px;height:12px" />
-                    <span v-else>{{ u.role === 'admin' ? 'Make viewer' : 'Make admin' }}</span>
-                  </button>
-                  <!-- Change password: only for viewers (admins manage own password via Settings) -->
+                    :value="u.role"
+                    @change="setRole(u, ($event.target as HTMLSelectElement).value)">
+                    <option value="viewer">viewer</option>
+                    <option value="admin">admin</option>
+                  </select>
+                  <span v-if="togglingRole === u.username" class="spinner" style="width:12px;height:12px" />
+                  <!-- Change password: for viewers always; for admins only own account -->
                   <button
-                    v-if="u.role !== 'admin'"
+                    v-if="u.role !== 'admin' || u.username === currentUsername"
                     class="btn btn-ghost btn-sm"
                     @click="openReset(u.username)">
                     Change password
@@ -239,10 +242,10 @@ async function submitCreate() {
   }
 }
 
-// Role toggle
-async function toggleRole(u: LocalUser) {
+// Role select
+async function setRole(u: LocalUser, newRole: string) {
+  if (newRole === u.role) return
   togglingRole.value = u.username
-  const newRole = u.role === 'admin' ? 'viewer' : 'admin'
   try {
     await updateLocalUserRole(u.username, newRole)
     showToast(`${u.username} is now ${newRole}`)
