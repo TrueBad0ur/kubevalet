@@ -1,7 +1,7 @@
 <template>
   <AppLayout title="Groups">
     <template #actions>
-      <button class="btn btn-primary" @click="openCreate">+ New Group</button>
+      <button v-if="isAdmin" class="btn btn-primary" @click="openCreate">+ New Group</button>
     </template>
 
     <Teleport to="body">
@@ -17,7 +17,7 @@
       <div v-else-if="groups.length === 0" class="empty-state">
         <h3>No groups yet</h3>
         <p>Create a group to manage k8s RBAC for multiple users at once.</p>
-        <button class="btn btn-primary" @click="openCreate">+ New Group</button>
+        <button v-if="isAdmin" class="btn btn-primary" @click="openCreate">+ New Group</button>
       </div>
       <div v-else class="table-wrap">
         <table>
@@ -41,7 +41,7 @@
                 <span v-else class="text-muted text-sm">none</span>
               </td>
               <td class="text-muted text-sm">{{ fmtDate(g.createdAt) }}</td>
-              <td style="text-align:right;white-space:nowrap">
+              <td v-if="isAdmin" style="text-align:right;white-space:nowrap">
                 <button class="btn btn-ghost btn-sm" style="margin-right:4px" @click="openEdit(g)">Edit</button>
                 <button v-if="g.clusterRole || g.customRole || g.namespaceBindings?.length"
                   class="btn btn-ghost btn-sm" style="margin-right:4px" @click="doSync(g.name)"
@@ -51,6 +51,7 @@
                 </button>
                 <button class="btn btn-danger btn-sm" @click="confirmDelete(g)">Delete</button>
               </td>
+              <td v-else></td>
             </tr>
           </tbody>
         </table>
@@ -242,6 +243,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import { useAuth } from '@/composables/useAuth'
 import { listGroups, createGroup, updateGroup, deleteGroup, syncGroup, type Group } from '@/api/groups'
 import type { NamespaceBinding, PolicyRule } from '@/api/users'
 
@@ -285,6 +287,8 @@ function nbToDraft(nb: NamespaceBinding): NsBindingDraft {
 }
 
 const groups   = ref<Group[]>([])
+const { isAdmin } = useAuth()
+
 const loading  = ref(true)
 const loadError = ref('')
 

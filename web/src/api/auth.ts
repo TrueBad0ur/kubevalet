@@ -2,6 +2,7 @@ import { client } from './client'
 
 export interface MeResponse {
   username: string
+  role: string
 }
 
 export async function login(username: string, password: string): Promise<string> {

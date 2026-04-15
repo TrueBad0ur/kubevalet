@@ -30,7 +30,7 @@
           Settings
         </RouterLink>
 
-        <RouterLink to="/local-users" :class="{ active: route.path === '/local-users' }">
+        <RouterLink v-if="isAdmin" to="/local-users" :class="{ active: route.path === '/local-users' }">
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/></svg>
           Local Users
         </RouterLink>
@@ -42,7 +42,10 @@
       </nav>
 
       <div class="sidebar-footer">
-        <span>{{ username ?? '—' }}</span>
+        <span>
+          {{ username ?? '—' }}
+          <span v-if="role" class="badge" :class="role === 'admin' ? 'badge-warning' : 'badge-gray'" style="margin-left:4px;font-size:10px">{{ role }}</span>
+        </span>
         <button class="btn btn-ghost btn-sm" @click="doLogout">Sign out</button>
       </div>
     </aside>
@@ -70,7 +73,7 @@ defineProps<{ title: string }>()
 
 const route  = useRoute()
 const router = useRouter()
-const { username, logout } = useAuth()
+const { username, role, logout, isAdmin } = useAuth()
 
 function doLogout() {
   logout()

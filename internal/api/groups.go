@@ -163,7 +163,7 @@ func (h *Handler) UpdateGroup(c *gin.Context) {
 	}
 	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
 	if len(errs) > 0 {
-		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 
@@ -227,7 +227,7 @@ func (h *Handler) DeleteGroup(c *gin.Context) {
 	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
 
 	if len(errs) > 0 {
-		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 
@@ -282,7 +282,7 @@ func (h *Handler) SyncGroup(c *gin.Context) {
 	}
 	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
 	if len(errs) > 0 {
-		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 

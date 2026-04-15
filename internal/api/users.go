@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -251,7 +252,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 	_, _ = h.db.Exec(ctx, "DELETE FROM users WHERE name=$1", username)
 
 	if len(errs) > 0 {
-		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 	c.Status(http.StatusNoContent)
@@ -303,7 +304,7 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 	}
 	collect(h.k8s.DeleteAllNamespaceBindings(ctx, username))
 	if len(errs) > 0 {
-		respondError(c, http.StatusInternalServerError, fmt.Errorf(strings.Join(errs, "; ")))
+		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 

@@ -210,6 +210,10 @@ make build
 ./bin/kubevalet
 ```
 
+## Known limitations
+
+- **JWT role changes take effect only after token expiry.** When an admin demotes another admin to viewer (or changes any role), the existing JWT is not invalidated — the affected user retains their previous role until their token expires (default TTL: 24 h). To force immediate effect, the user must log out and log in again. This is an inherent trade-off of stateless JWT auth; adding server-side token blacklisting would require a shared revocation store.
+
 ## Roadmap
 
 - [x] Screenshots in README

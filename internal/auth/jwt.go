@@ -9,12 +9,14 @@ import (
 
 type Claims struct {
 	Username string `json:"username"`
+	Role     string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func SignToken(username, secret string, ttl time.Duration) (string, error) {
+func SignToken(username, role, secret string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		Username: username,
+		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

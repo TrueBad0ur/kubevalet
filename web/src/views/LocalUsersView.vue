@@ -19,7 +19,7 @@
         </svg>
         <h3 style="margin:0 0 8px;font-size:15px;font-weight:600">Local Users disabled</h3>
         <p class="text-muted text-sm" style="margin:0">
-          Enable this feature in your Helm values:<br>
+          Enable in Helm values:<br>
           <code style="font-size:12px;background:var(--surface-alt,#f1f5f9);padding:2px 6px;border-radius:4px;display:inline-block;margin-top:8px">localUsers.enabled: true</code>
         </p>
       </div>
@@ -42,6 +42,7 @@
           <thead>
             <tr>
               <th>Username</th>
+              <th>Role</th>
               <th>Created</th>
               <th></th>
             </tr>
@@ -52,12 +53,35 @@
                 {{ u.username }}
                 <span v-if="u.username === currentUsername" class="badge badge-gray" style="margin-left:6px;font-size:10px">you</span>
               </td>
+              <td>
+                <span class="badge" :class="u.role === 'admin' ? 'badge-warning' : 'badge-gray'">
+                  {{ u.role }}
+                </span>
+              </td>
               <td class="text-muted text-sm">{{ new Date(u.createdAt).toLocaleString() }}</td>
               <td style="white-space:nowrap">
                 <div class="flex gap-2" style="align-items:center">
-                  <button class="btn btn-ghost btn-sm" @click="openReset(u.username)">Change password</button>
-                  <button class="btn btn-danger btn-sm"
-                    :disabled="u.username === currentUsername || deleting === u.username"
+                  <!-- Role toggle: only for other users, not for 'admin' username -->
+                  <button
+                    v-if="u.username !== 'admin' && u.username !== currentUsername"
+                    class="btn btn-ghost btn-sm"
+                    :disabled="togglingRole === u.username"
+                    @click="toggleRole(u)">
+                    <span v-if="togglingRole === u.username" class="spinner" style="width:12px;height:12px" />
+                    <span v-else>{{ u.role === 'admin' ? 'Make viewer' : 'Make admin' }}</span>
+                  </button>
+                  <!-- Change password: only for viewers (admins manage own password via Settings) -->
+                  <button
+                    v-if="u.role !== 'admin'"
+                    class="btn btn-ghost btn-sm"
+                    @click="openReset(u.username)">
+                    Change password
+                  </button>
+                  <!-- Delete: not for 'admin' user, not for self -->
+                  <button
+                    v-if="u.username !== 'admin' && u.username !== currentUsername"
+                    class="btn btn-danger btn-sm"
+                    :disabled="deleting === u.username"
                     @click="confirmDelete(u.username)">
                     <span v-if="deleting === u.username" class="spinner" />
                     <span v-else>Delete</span>
@@ -83,12 +107,22 @@
             </div>
             <div class="form-group">
               <label class="form-label">Password <span class="required">*</span></label>
-              <input v-model="createForm.password" type="password" class="form-input" required
-                autocomplete="new-password" />
+              <input v-model="createForm.password" type="password" class="form-input" required autocomplete="new-password" />
             </div>
             <div class="form-group">
               <label class="form-label">Confirm password <span class="required">*</span></label>
               <input v-model="createForm.confirm" type="password" class="form-input" required autocomplete="new-password" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Role</label>
+              <div class="radio-group">
+                <label class="radio-option">
+                  <input type="radio" v-model="createForm.role" value="viewer" /> Viewer <span class="text-muted text-sm">(read-only)</span>
+                </label>
+                <label class="radio-option">
+                  <input type="radio" v-model="createForm.role" value="admin" /> Admin <span class="text-muted text-sm">(full access)</span>
+                </label>
+              </div>
             </div>
             <div class="modal-footer" style="padding:0;border:none;margin-top:4px">
               <button type="button" class="btn btn-ghost" @click="createOpen = false">Cancel</button>
@@ -102,7 +136,7 @@
       </div>
     </div>
 
-    <!-- Change password modal -->
+    <!-- Change password modal (viewers only) -->
     <div v-if="resetTarget" class="modal-overlay" @click.self="resetTarget = null">
       <div class="modal" style="max-width:400px">
         <div class="modal-header">Change password — <strong class="font-mono">{{ resetTarget }}</strong></div>
@@ -111,8 +145,7 @@
           <form @submit.prevent="submitReset">
             <div class="form-group">
               <label class="form-label">New password <span class="required">*</span></label>
-              <input v-model="resetForm.password" type="password" class="form-input" required
-                autocomplete="new-password" />
+              <input v-model="resetForm.password" type="password" class="form-input" required autocomplete="new-password" />
             </div>
             <div class="form-group">
               <label class="form-label">Confirm password <span class="required">*</span></label>
@@ -130,7 +163,7 @@
       </div>
     </div>
 
-    <!-- Delete confirmation modal -->
+    <!-- Delete confirmation -->
     <div v-if="deleteTarget" class="modal-overlay" @click.self="deleteTarget = null">
       <div class="modal" style="max-width:400px">
         <div class="modal-header">Confirm deletion</div>
@@ -153,17 +186,18 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
-import { listLocalUsers, createLocalUser, deleteLocalUser, resetLocalUserPassword, type LocalUser } from '@/api/localUsers'
+import { listLocalUsers, createLocalUser, deleteLocalUser, resetLocalUserPassword, updateLocalUserRole, type LocalUser } from '@/api/localUsers'
 import { getSettings } from '@/api/settings'
 import { useAuth } from '@/composables/useAuth'
 
 const { username: currentUsername } = useAuth()
 
-const enabled  = ref(false)
-const users    = ref<LocalUser[]>([])
-const loading  = ref(true)
-const deleting = ref('')
-const toast    = reactive({ msg: '', type: 'success' })
+const enabled      = ref(false)
+const users        = ref<LocalUser[]>([])
+const loading      = ref(true)
+const deleting     = ref('')
+const togglingRole = ref('')
+const toast        = reactive({ msg: '', type: 'success' })
 
 function showToast(msg: string, type: 'success' | 'error' = 'success') {
   toast.msg  = msg
@@ -172,15 +206,16 @@ function showToast(msg: string, type: 'success' | 'error' = 'success') {
 }
 
 // Create
-const createOpen  = ref(false)
+const createOpen   = ref(false)
 const createSaving = ref(false)
 const createError  = ref('')
-const createForm   = reactive({ username: '', password: '', confirm: '' })
+const createForm   = reactive({ username: '', password: '', confirm: '', role: 'viewer' })
 
 function openCreate() {
   createForm.username = ''
   createForm.password = ''
   createForm.confirm  = ''
+  createForm.role     = 'viewer'
   createError.value   = ''
   createOpen.value    = true
 }
@@ -193,7 +228,7 @@ async function submitCreate() {
   }
   createSaving.value = true
   try {
-    await createLocalUser(createForm.username, createForm.password)
+    await createLocalUser(createForm.username, createForm.password, createForm.role)
     createOpen.value = false
     showToast(`User "${createForm.username}" created`)
     await load()
@@ -204,11 +239,26 @@ async function submitCreate() {
   }
 }
 
-// Reset password
-const resetTarget  = ref<string | null>(null)
-const resetSaving  = ref(false)
-const resetError   = ref('')
-const resetForm    = reactive({ password: '', confirm: '' })
+// Role toggle
+async function toggleRole(u: LocalUser) {
+  togglingRole.value = u.username
+  const newRole = u.role === 'admin' ? 'viewer' : 'admin'
+  try {
+    await updateLocalUserRole(u.username, newRole)
+    showToast(`${u.username} is now ${newRole}`)
+    await load()
+  } catch (e: any) {
+    showToast(e.response?.data?.error ?? 'Failed to update role', 'error')
+  } finally {
+    togglingRole.value = ''
+  }
+}
+
+// Change password (viewers only)
+const resetTarget = ref<string | null>(null)
+const resetSaving = ref(false)
+const resetError  = ref('')
+const resetForm   = reactive({ password: '', confirm: '' })
 
 function openReset(username: string) {
   resetTarget.value  = username
@@ -229,7 +279,7 @@ async function submitReset() {
     resetTarget.value = null
     showToast('Password updated')
   } catch (e: any) {
-    resetError.value = e.response?.data?.error ?? 'Failed to reset password'
+    resetError.value = e.response?.data?.error ?? 'Failed to update password'
   } finally {
     resetSaving.value = false
   }
@@ -261,9 +311,8 @@ async function load() {
   loading.value = true
   try {
     users.value = await listLocalUsers()
-  } catch {
-    // feature disabled or error — handled by enabled flag
-  } finally {
+  } catch {}
+  finally {
     loading.value = false
   }
 }
