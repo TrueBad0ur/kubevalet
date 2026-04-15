@@ -29,7 +29,7 @@ kubevalet solves a common problem: giving people access to a Kubernetes cluster 
 
 ```bash
 helm install kubevalet oci://ghcr.io/truebad0ur/kubevalet \
-  --version 0.3.14 \
+  --version 0.3.15 \
   --namespace kubevalet --create-namespace \
   --set cluster.server=https://<your-api-server>:6443 \
   --set auth.adminPassword=changeme
@@ -50,7 +50,7 @@ Default credentials: `admin` / value of `auth.adminPassword`.
 
 ```bash
 helm upgrade kubevalet oci://ghcr.io/truebad0ur/kubevalet \
-  --version 0.3.14 \
+  --version 0.3.15 \
   --namespace kubevalet \
   --reuse-values
 ```
