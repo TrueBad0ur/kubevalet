@@ -23,6 +23,9 @@ type Config struct {
 	TokenTTL      time.Duration `env:"TOKEN_TTL"       envDefault:"24h"`
 	AdminUsername string        `env:"ADMIN_USERNAME"  envDefault:""`
 	AdminPassword string        `env:"ADMIN_PASSWORD"  envDefault:""`
+
+	// Features
+	EnableLocalUsers bool `env:"ENABLE_LOCAL_USERS" envDefault:"false"`
 }
 
 func Load() (*Config, error) {

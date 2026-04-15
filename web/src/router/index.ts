@@ -6,6 +6,7 @@ import SettingsView     from '@/views/SettingsView.vue'
 import IntegrationsView from '@/views/IntegrationsView.vue'
 import GroupsView       from '@/views/GroupsView.vue'
 import GraphView        from '@/views/GraphView.vue'
+import LocalUsersView   from '@/views/LocalUsersView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -22,6 +23,7 @@ const router = createRouter({
     { path: '/groups',       component: GroupsView },
     { path: '/graph',        component: GraphView },
     { path: '/settings',     component: SettingsView },
+    { path: '/local-users',  component: LocalUsersView },
     { path: '/integrations', component: IntegrationsView },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

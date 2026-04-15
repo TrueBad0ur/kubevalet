@@ -14,8 +14,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	var clusterServer string
 	_ = h.db.QueryRow(c.Request.Context(), "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&clusterServer)
 	c.JSON(http.StatusOK, gin.H{
-		"version":       version.Version,
-		"clusterServer": clusterServer,
+		"version":           version.Version,
+		"clusterServer":     clusterServer,
+		"localUsersEnabled": h.cfg.EnableLocalUsers,
 	})
 }
 
