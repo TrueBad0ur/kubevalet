@@ -5,7 +5,7 @@ replicaCount: 1
 
 image:
   repository: truebad0ur/kubevalet
-  tag: "0.3.14"
+  tag: "0.3.15"
   pullPolicy: IfNotPresent
 
 ## Kubernetes cluster info embedded in generated kubeconfigs.
@@ -30,6 +30,13 @@ auth:
   ## ⚠ Change adminPassword before exposing the service externally.
   adminUsername: admin
   adminPassword: "admin"
+
+## Local Users — allow admin to create additional kubevalet UI login accounts.
+## When disabled, only the initial admin account (auth.adminUsername) can log in.
+## Enable when you need multiple human operators or service accounts to access the kubevalet UI.
+## Note: all local users have full admin access. Role-based access is planned for a future release.
+localUsers:
+  enabled: false
 
 ## PostgreSQL — bundled StatefulSet (set enabled: false to use an external instance)
 postgres:

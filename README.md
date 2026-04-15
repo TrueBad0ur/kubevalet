@@ -117,7 +117,7 @@ make release VER=0.3.13
 
 GitHub Actions builds two things in parallel:
 - Docker image `truebad0ur/kubevalet:0.3.13` + `latest` → DockerHub
-- Helm chart `0.3.14` → ghcr.io → Artifact Hub
+- Helm chart `0.3.15` → ghcr.io → Artifact Hub
 
 4. Deploy:
 ```bash
@@ -182,7 +182,7 @@ kubectl port-forward svc/kubevalet 8080:80 -n kubevalet
 
 | Value | Default | Description |
 |---|---|---|
-| `image.tag` | `0.3.14` | Image tag |
+| `image.tag` | `0.3.15` | Image tag |
 | `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to (can also be changed at runtime in Settings UI) |
 | `cluster.name` | `kubernetes` | Cluster name in kubeconfig context |
 | `auth.adminPassword` | `admin` | Initial admin password |
@@ -213,6 +213,7 @@ make build
 ## Roadmap
 
 - [x] Screenshots in README
+- [ ] RBAC for local users (is_admin flag → admin can manage all users/passwords, regular users can only change own password)
 - [ ] Keycloak / OIDC integration
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)

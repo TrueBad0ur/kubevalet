@@ -78,6 +78,8 @@ spec:
               value: {{ .Values.auth.tokenTTL | quote }}
             - name: ADMIN_USERNAME
               value: {{ .Values.auth.adminUsername | quote }}
+            - name: ENABLE_LOCAL_USERS
+              value: {{ .Values.localUsers.enabled | quote }}
             ## Sensitive values from Secret
             - name: POSTGRES_DSN
               valueFrom:

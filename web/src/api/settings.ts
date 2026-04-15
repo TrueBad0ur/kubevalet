@@ -3,6 +3,7 @@ import { client } from './client'
 export interface Settings {
   version: string
   clusterServer: string
+  localUsersEnabled: boolean
 }
 
 export async function getSettings(): Promise<Settings> {

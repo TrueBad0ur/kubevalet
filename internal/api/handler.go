@@ -46,6 +46,11 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.PUT("/groups/:name", h.UpdateGroup)
 	protected.DELETE("/groups/:name", h.DeleteGroup)
 	protected.POST("/groups/:name/sync", h.SyncGroup)
+
+	protected.GET("/local-users", h.ListLocalUsers)
+	protected.POST("/local-users", h.CreateLocalUser)
+	protected.DELETE("/local-users/:username", h.DeleteLocalUser)
+	protected.PUT("/local-users/:username/password", h.ResetLocalUserPassword)
 }
 
 type errorResponse struct {

@@ -14,8 +14,9 @@ func (h *Handler) GetSettings(c *gin.Context) {
 	var clusterServer string
 	_ = h.db.QueryRow(c.Request.Context(), "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&clusterServer)
 	c.JSON(http.StatusOK, gin.H{
-		"version":       version.Version,
-		"clusterServer": clusterServer,
+		"version":           version.Version,
+		"clusterServer":     clusterServer,
+		"localUsersEnabled": h.cfg.EnableLocalUsers,
 	})
 }
 
@@ -50,11 +51,6 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	var req changePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
-		return
-	}
-
-	if len(req.NewPassword) < 8 {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("new password must be at least 8 characters"))
 		return
 	}
 
