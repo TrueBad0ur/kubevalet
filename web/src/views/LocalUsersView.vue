@@ -55,7 +55,7 @@
               <td class="text-muted text-sm">{{ new Date(u.createdAt).toLocaleString() }}</td>
               <td style="white-space:nowrap">
                 <div class="flex gap-2" style="align-items:center">
-                  <button class="btn btn-ghost btn-sm" @click="openReset(u.username)">Reset password</button>
+                  <button class="btn btn-ghost btn-sm" @click="openReset(u.username)">Change password</button>
                   <button class="btn btn-danger btn-sm"
                     :disabled="u.username === currentUsername || deleting === u.username"
                     @click="confirmDelete(u.username)">
@@ -84,7 +84,7 @@
             <div class="form-group">
               <label class="form-label">Password <span class="required">*</span></label>
               <input v-model="createForm.password" type="password" class="form-input" required
-                placeholder="Minimum 8 characters" autocomplete="new-password" />
+                autocomplete="new-password" />
             </div>
             <div class="form-group">
               <label class="form-label">Confirm password <span class="required">*</span></label>
@@ -102,17 +102,17 @@
       </div>
     </div>
 
-    <!-- Reset password modal -->
+    <!-- Change password modal -->
     <div v-if="resetTarget" class="modal-overlay" @click.self="resetTarget = null">
       <div class="modal" style="max-width:400px">
-        <div class="modal-header">Reset password — <strong class="font-mono">{{ resetTarget }}</strong></div>
+        <div class="modal-header">Change password — <strong class="font-mono">{{ resetTarget }}</strong></div>
         <div class="modal-body">
           <div v-if="resetError" class="alert alert-error" style="margin-bottom:12px">{{ resetError }}</div>
           <form @submit.prevent="submitReset">
             <div class="form-group">
               <label class="form-label">New password <span class="required">*</span></label>
               <input v-model="resetForm.password" type="password" class="form-input" required
-                placeholder="Minimum 8 characters" autocomplete="new-password" />
+                autocomplete="new-password" />
             </div>
             <div class="form-group">
               <label class="form-label">Confirm password <span class="required">*</span></label>

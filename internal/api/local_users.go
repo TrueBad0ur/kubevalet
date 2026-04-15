@@ -57,11 +57,6 @@ func (h *Handler) CreateLocalUser(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	if len(req.Password) < 8 {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("password must be at least 8 characters"))
-		return
-	}
-
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -135,11 +130,6 @@ func (h *Handler) ResetLocalUserPassword(c *gin.Context) {
 		respondError(c, http.StatusBadRequest, err)
 		return
 	}
-	if len(req.Password) < 8 {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("password must be at least 8 characters"))
-		return
-	}
-
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)

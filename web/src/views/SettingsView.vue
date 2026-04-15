@@ -41,7 +41,7 @@
             <div class="form-group">
               <label class="form-label">New password</label>
               <input v-model="pwForm.next" type="password" class="form-input" required autocomplete="new-password"
-                placeholder="Minimum 8 characters" />
+                />
             </div>
             <div class="form-group">
               <label class="form-label">Confirm new password</label>
@@ -116,10 +116,6 @@ async function submitPassword() {
   pwSuccess.value = ''
   if (pwForm.next !== pwForm.confirm) {
     pwError.value = 'New passwords do not match'
-    return
-  }
-  if (pwForm.next.length < 8) {
-    pwError.value = 'New password must be at least 8 characters'
     return
   }
   pwSaving.value = true

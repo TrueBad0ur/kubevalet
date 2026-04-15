@@ -54,11 +54,6 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	if len(req.NewPassword) < 8 {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("new password must be at least 8 characters"))
-		return
-	}
-
 	usernameVal, _ := c.Get(ctxKeyUsername)
 	username, _ := usernameVal.(string)
 

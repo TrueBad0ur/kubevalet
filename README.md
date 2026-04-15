@@ -213,6 +213,7 @@ make build
 ## Roadmap
 
 - [x] Screenshots in README
+- [ ] RBAC for local users (is_admin flag → admin can manage all users/passwords, regular users can only change own password)
 - [ ] Keycloak / OIDC integration
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
