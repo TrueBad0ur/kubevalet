@@ -1,18 +1,12 @@
 #!/bin/sh
-# Validates branch name before push.
-# Allowed: main, or x.x.x-word (e.g. 0.3.13-dev, 0.3.13-feature-oidc)
+# Prevents direct push to main — use PRs instead.
 
 branch=$(git symbolic-ref --short HEAD 2>/dev/null)
 
 if [ "$branch" = "main" ]; then
-  exit 0
-fi
-
-if ! echo "$branch" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+-[a-z0-9-]+$'; then
   echo ""
-  echo "  pre-push: branch name '$branch' is not allowed."
-  echo "  Use 'main' or follow the format:  x.x.x-suffix"
-  echo "  Examples: 0.3.13-dev   0.3.13-feature-oidc   0.3.13-fix-login"
+  echo "  pre-push: direct push to main is not allowed."
+  echo "  Open a PR and squash merge instead."
   echo ""
   exit 1
 fi

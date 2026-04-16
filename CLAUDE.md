@@ -12,19 +12,11 @@ Users can belong to groups (x509 O field) or have no direct RBAC (groups-only). 
 
 ## MANDATORY rules (never skip)
 
-1. **Version bumping — only when preparing a release, not during feature branch iteration:**
-   - On a feature branch (`x.x.x-suffix`): **do NOT bump versions** while developing. Iterate freely.
-   - As the **last commit before opening a PR**: bump versions in all four places to the same target value:
-     - `image.tag` in `charts/kubevalet/values.yaml`
-     - `version` + `appVersion` in `charts/kubevalet/Chart.yaml`
-     - `image.tag` row in `README.md` key values table
-     - version references in `charts/kubevalet/README.md`
-   - After PR merges to `main`: run `make release VER=<version>` — this tags main and CI builds everything.
+1. **Do NOT bump versions in files.** Version lives only in the git tag. `Chart.yaml` and `values.yaml` stay at `0.0.0-dev`. CI injects the real version from the tag at build time.
 
 2. **After every session — print the appropriate command:**
    - If on a feature branch (still iterating): `make commit MSG="<describe changes>"`
-   - If feature is ready for PR (last commit on branch): `make bump VER=<version>`
-   - If on main after PR merge (just tagging): `make release VER=<version>`
+   - If on main after PR merge (ready to release): `make release VER=<version>`
 
 ---
 
@@ -40,12 +32,6 @@ There is no local frontend build step — `vue-tsc` and `vite build` run inside 
 ```bash
 make commit MSG="your message"
 ```
-
-### Bump version (last commit on feature branch before PR)
-```bash
-make bump VER=0.3.13
-```
-Updates all 4 version locations, commits `"release version 0.3.13"`, pushes.
 
 ### Release (on main after PR merge — tags HEAD, triggers CI)
 ```bash

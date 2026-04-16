@@ -81,7 +81,7 @@ After that it activates automatically on every `make commit` and `make release` 
 ```bash
 git checkout -b 0.3.13-dev
 
-# iterate freely — no version bumps needed
+# iterate freely — no version bumps, no file changes needed
 make commit MSG="add feature X"
 make commit MSG="fix bug Y"
 ```
@@ -100,26 +100,40 @@ KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
   -n kubevalet --reuse-values --set image.tag=0.3.13-dev
 ```
 
+### Reviewing PRs
+
+When a contributor opens a PR from a fork:
+
+1. **`pr-validate`** runs automatically — go build, tests, helm lint, docker build (no push). No secrets involved, safe for any fork.
+
+2. Review the code. If it looks good, add the label **`ok-to-test`**.
+
+3. **`pr-image`** triggers and builds a test image tagged as `<next-version>-<branch-name>` (e.g. last release is `v0.3.16`, branch is `super-feature` → `0.3.17-super-feature`). The image is pushed to DockerHub and the workflow comments on the PR with the deploy command.
+
+4. If the contributor pushes new commits, the `ok-to-test` label is removed automatically — re-review and re-label to build again.
+
+5. When satisfied — squash merge the PR.
+
 ### Release — when ready to ship
 
-1. Bump version as the **last commit on the feature branch** before opening a PR:
+Version lives **only in the git tag** — no version bumping in files.
+CI reads the tag and injects it into the Docker image and Helm chart at build time.
+
+1. Open a PR → squash merge to `main`.
+
+2. On `main` after merge — tag and trigger CI:
 ```bash
-make bump VER=0.3.13
+make release VER=0.3.13   # patch
+make release VER=0.4.0    # minor — new feature set, no breaking changes
+make release VER=1.0.0    # major — breaking changes
 ```
-This updates all four version locations and commits `"release version 0.3.13"` automatically.
+CI always injects whatever version you pass. The decision of patch/minor/major is yours — it has no effect on the build process itself.
 
-2. Open a PR → merge to `main`.
-
-3. On `main` after merge — tag HEAD and trigger CI:
-```bash
-make release VER=0.3.13
-```
-
-GitHub Actions builds two things in parallel:
+GitHub Actions builds in parallel:
 - Docker image `truebad0ur/kubevalet:0.3.13` + `latest` → DockerHub
-- Helm chart `0.3.16` → ghcr.io → Artifact Hub
+- Helm chart `0.3.13` → ghcr.io → Artifact Hub
 
-4. Deploy:
+3. Deploy:
 ```bash
 KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
   -n kubevalet --reuse-values --set image.tag=0.3.13
