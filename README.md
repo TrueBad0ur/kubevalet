@@ -231,7 +231,7 @@ make build
 ## Roadmap
 
 - [x] Screenshots in README
-- [ ] RBAC for local users (is_admin flag → admin can manage all users/passwords, regular users can only change own password)
+- [x] RBAC for local users (is_admin flag → admin can manage all users/passwords, regular users can only change own password)
 - [ ] Keycloak / OIDC integration
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
@@ -239,4 +239,4 @@ make build
 - [ ] Role templates (save and reuse custom RBAC configs)
 - [ ] LDAP sync
 - [ ] CVE scanning in CI (Trivy)
-- [ ] CI workflow for external PRs: `pull_request` (go build + test + helm lint + docker build --no-push, no secrets) and `pull_request_target` gated by `ok-to-test` label (build + push `pr-{N}` image to DockerHub, auto-remove label on new commits)
+- [x] CI workflow for external PRs: `pull_request` (go build + test + helm lint + docker build --no-push, no secrets) and `pull_request_target` gated by `ok-to-test` label (build + push `pr-{N}` image to DockerHub, auto-remove label on new commits)
