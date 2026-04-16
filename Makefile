@@ -9,7 +9,7 @@ PLATFORMS := linux/amd64,linux/arm64
         docker-build docker-push docker-buildx docker-buildx-push \
         buildx-setup \
         helm-lint helm-package \
-        hooks-setup commit bump release
+        hooks-setup commit release
 
 ## ── Local dev ────────────────────────────────────────────────────────────────
 
@@ -86,29 +86,12 @@ endif
 	git diff --cached --quiet || git commit -m "$(MSG)"
 	git push --set-upstream origin $$(git branch --show-current)
 
-# Usage: make bump VER=0.3.13
-# Bumps version in all 4 files and commits "release version 0.3.13".
-# Run this as the last commit on a feature branch before opening a PR.
-bump:
-ifndef VER
-	$(error VER is required, e.g.: make bump VER=0.3.13)
-endif
-	@CURRENT=$$(grep -m1 '^version:' charts/kubevalet/Chart.yaml | awk '{print $$2}'); \
-	sed -i "s/^version: .*/version: $(VER)/" charts/kubevalet/Chart.yaml; \
-	sed -i "s/^appVersion: .*/appVersion: \"$(VER)\"/" charts/kubevalet/Chart.yaml; \
-	sed -i "s/tag: \"$$CURRENT\"/tag: \"$(VER)\"/" charts/kubevalet/values.yaml; \
-	sed -i "s/\`$$CURRENT\`/\`$(VER)\`/" README.md; \
-	sed -i "s/--version $$CURRENT/--version $(VER)/g" charts/kubevalet/README.md
-	git config core.hooksPath .githooks
-	git add charts/kubevalet/Chart.yaml charts/kubevalet/values.yaml README.md charts/kubevalet/README.md
-	git commit -m "release version $(VER)"
-	git pull --rebase
-	git push --set-upstream origin $$(git branch --show-current)
-
 # Usage: make release VER=0.3.13
-# Tags HEAD as v<VER> and pushes the tag →
-#   GitHub Actions: Docker image → DockerHub + Helm chart → ghcr.io → Artifact Hub
-# Run on main after the PR (with bump commit) is merged.
+# Tags HEAD of main as v<VER> and pushes the tag.
+# GitHub Actions picks up the tag and builds:
+#   - Docker image (linux/amd64 + arm64) → DockerHub
+#   - Helm chart → ghcr.io → Artifact Hub
+# Version is injected by CI from the tag — no file changes needed.
 release:
 ifndef VER
 	$(error VER is required, e.g.: make release VER=0.3.13)

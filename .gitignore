@@ -1,7 +1,7 @@
 # Binaries
 tmp/
 /kubevalet
-dist/
+/dist/
 bin/
 
 # Go
@@ -11,8 +11,8 @@ vendor/
 
 # Frontend
 web/node_modules/
-# web/dist/ intentionally NOT ignored — placeholder is committed,
-# real build output overwrites it in Docker / CI
+web/dist/*
+!web/dist/.gitkeep
 
 # IDE
 PLAN.md
