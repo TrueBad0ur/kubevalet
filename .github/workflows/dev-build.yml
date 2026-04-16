@@ -11,10 +11,23 @@ env:
   IMAGE: truebad0ur/kubevalet
 
 jobs:
+  check:
+    name: Check for open PR
+    runs-on: ubuntu-latest
+    outputs:
+      has_pr: ${{ steps.pr.outputs.has_pr }}
+    steps:
+      - id: pr
+        run: |
+          COUNT=$(gh pr list --head "$GITHUB_REF_NAME" --state open --json number --jq 'length')
+          echo "has_pr=$([[ $COUNT -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   docker:
     name: Push branch image to DockerHub
-    # Skip when this push is part of an open PR — pr-validate and pr-image handle that flow
-    if: github.event.pull_request == null
+    needs: check
+    if: needs.check.outputs.has_pr == 'false'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
