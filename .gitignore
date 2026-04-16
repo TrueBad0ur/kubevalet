@@ -1,7 +1,7 @@
 # Binaries
 tmp/
 /kubevalet
-dist/
+/dist/
 bin/
 
 # Go
