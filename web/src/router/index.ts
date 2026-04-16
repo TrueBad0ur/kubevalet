@@ -19,7 +19,9 @@ function roleFromToken(): string | null {
   const t = localStorage.getItem('token')
   if (!t) return null
   try {
-    return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))?.role ?? null
+    const seg = t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = seg + '='.repeat((4 - seg.length % 4) % 4)
+    return JSON.parse(atob(padded))?.role ?? null
   } catch { return null }
 }
 
