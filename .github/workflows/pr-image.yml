@@ -106,24 +106,3 @@ jobs:
               })
             } catch {}
 
-      - name: Comment with image tag
-        uses: actions/github-script@v7
-        env:
-          IMG_TAG: ${{ steps.tag.outputs.tag }}
-        with:
-          script: |
-            const tag = process.env.IMG_TAG
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: [
-                `🐳 **Test image built:** \`${{ env.IMAGE }}:${tag}\``,
-                '',
-                'Deploy to your cluster:',
-                '```bash',
-                `helm upgrade kubevalet ./charts/kubevalet -n kubevalet --reuse-values \\`,
-                `  --set image.tag=${tag}`,
-                '```',
-              ].join('\n')
-            })
