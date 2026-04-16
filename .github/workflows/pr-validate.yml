@@ -41,3 +41,14 @@ jobs:
           build-args: VERSION=pr-${{ github.event.pull_request.number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Notify maintainer
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: '@TrueBad0ur all checks passed — ready to add `ok-to-test` label to build the image.',
+            })
