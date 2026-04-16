@@ -12,7 +12,9 @@ env:
 
 jobs:
   docker:
-    name: Docker image → DockerHub (branch tag)
+    name: Push branch image to DockerHub
+    # Skip when this push is part of an open PR — pr-validate and pr-image handle that flow
+    if: github.event.pull_request == null
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
