@@ -53,10 +53,10 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	row := h.db.QueryRow(c.Request.Context(),
-		"SELECT password FROM admin_users WHERE username = $1", req.Username)
+		"SELECT password, role FROM admin_users WHERE username = $1", req.Username)
 
-	var hash string
-	if err := row.Scan(&hash); err != nil {
+	var hash, role string
+	if err := row.Scan(&hash, &role); err != nil {
 		// Deliberate vague error to prevent username enumeration
 		respondError(c, http.StatusUnauthorized, fmt.Errorf("invalid credentials"))
 		return
@@ -67,7 +67,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := auth.SignToken(req.Username, h.cfg.JWTSecret, h.cfg.TokenTTL)
+	token, err := auth.SignToken(req.Username, role, h.cfg.JWTSecret, h.cfg.TokenTTL)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -78,5 +78,6 @@ func (h *Handler) Login(c *gin.Context) {
 
 func (h *Handler) Me(c *gin.Context) {
 	username, _ := c.Get(ctxKeyUsername)
-	c.JSON(http.StatusOK, gin.H{"username": username})
+	role, _ := c.Get(ctxKeyRole)
+	c.JSON(http.StatusOK, gin.H{"username": username, "role": role})
 }

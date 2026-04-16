@@ -117,7 +117,7 @@ make release VER=0.3.13
 
 GitHub Actions builds two things in parallel:
 - Docker image `truebad0ur/kubevalet:0.3.13` + `latest` → DockerHub
-- Helm chart `0.3.15` → ghcr.io → Artifact Hub
+- Helm chart `0.3.16` → ghcr.io → Artifact Hub
 
 4. Deploy:
 ```bash
@@ -182,7 +182,7 @@ kubectl port-forward svc/kubevalet 8080:80 -n kubevalet
 
 | Value | Default | Description |
 |---|---|---|
-| `image.tag` | `0.3.15` | Image tag |
+| `image.tag` | `0.3.16` | Image tag |
 | `cluster.server` | `https://kubernetes.default.svc.cluster.local` | API server URL embedded in kubeconfigs — set to the external address users will connect to (can also be changed at runtime in Settings UI) |
 | `cluster.name` | `kubernetes` | Cluster name in kubeconfig context |
 | `auth.adminPassword` | `admin` | Initial admin password |
@@ -210,6 +210,10 @@ make build
 ./bin/kubevalet
 ```
 
+## Known limitations
+
+- **JWT role changes take effect only after token expiry.** When an admin demotes another admin to viewer (or changes any role), the existing JWT is not invalidated — the affected user retains their previous role until their token expires (default TTL: 24 h). To force immediate effect, the user must log out and log in again. This is an inherent trade-off of stateless JWT auth; adding server-side token blacklisting would require a shared revocation store.
+
 ## Roadmap
 
 - [x] Screenshots in README
@@ -221,3 +225,4 @@ make build
 - [ ] Role templates (save and reuse custom RBAC configs)
 - [ ] LDAP sync
 - [ ] CVE scanning in CI (Trivy)
+- [ ] CI workflow for external PRs: `pull_request` (go build + test + helm lint + docker build --no-push, no secrets) and `pull_request_target` gated by `ok-to-test` label (build + push `pr-{N}` image to DockerHub, auto-remove label on new commits)

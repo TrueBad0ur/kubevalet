@@ -1,7 +1,7 @@
 <template>
   <AppLayout title="Users">
     <template #actions>
-      <RouterLink to="/users/new" class="btn btn-primary">
+      <RouterLink v-if="isAdmin" to="/users/new" class="btn btn-primary">
         <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
         New User
       </RouterLink>
@@ -20,7 +20,7 @@
       <div v-else-if="users.length === 0" class="empty-state">
         <h3>No users yet</h3>
         <p>Create your first Kubernetes user to get started.</p>
-        <RouterLink to="/users/new" class="btn btn-primary">Create User</RouterLink>
+        <RouterLink v-if="isAdmin" to="/users/new" class="btn btn-primary">Create User</RouterLink>
       </div>
 
       <div v-else class="table-wrap">
@@ -71,8 +71,8 @@
               <td class="text-muted text-sm">{{ formatDate(u.createdAt) }}</td>
               <td class="text-sm" :class="expiryClass(u.certExpiresAt)">{{ formatExpiry(u.certExpiresAt) }}</td>
 
-              <!-- Actions: primary = Edit, Kubeconfig, Delete; secondary = Sync icon -->
-              <td style="white-space:nowrap">
+              <!-- Actions: write-actions admin-only -->
+              <td v-if="isAdmin" style="white-space:nowrap">
                 <div class="flex gap-2" style="align-items:center">
                   <button class="btn btn-ghost btn-sm" @click="openEdit(u)">Edit</button>
                   <button class="btn btn-ghost btn-sm" @click="viewKubeconfig(u.name)" :disabled="viewing === u.name">
@@ -98,6 +98,7 @@
                   </button>
                 </div>
               </td>
+              <td v-else></td>
             </tr>
           </tbody>
         </table>
@@ -424,6 +425,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
+import { useAuth } from '@/composables/useAuth'
 import { listUsers, deleteUser, updateUserRBAC, syncUser, renewCertificate, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
 import { client } from '@/api/client'
@@ -461,6 +463,8 @@ function editToggleVerb(rule: RuleDraft, verb: string) {
 }
 
 const users       = ref<User[]>([])
+const { isAdmin } = useAuth()
+
 const loading     = ref(true)
 const error       = ref('')
 const deleting    = ref('')

@@ -2,8 +2,8 @@
   <AppLayout title="Settings">
     <div style="max-width:480px;display:flex;flex-direction:column;gap:24px">
 
-      <!-- Cluster -->
-      <div class="card">
+      <!-- Cluster (admin-only) -->
+      <div v-if="isAdmin" class="card">
         <div style="padding:16px 20px;border-bottom:1px solid var(--border)">
           <h3 style="margin:0;font-size:14px;font-weight:600">Cluster</h3>
         </div>
@@ -74,6 +74,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { getSettings, updateSettings, changePassword } from '@/api/settings'
+import { useAuth } from '@/composables/useAuth'
+
+const { isAdmin } = useAuth()
 
 const version        = ref('…')
 const clusterServer  = ref('')

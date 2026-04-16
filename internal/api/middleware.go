@@ -11,6 +11,7 @@ import (
 )
 
 const ctxKeyUsername = "username"
+const ctxKeyRole = "role"
 
 func (h *Handler) AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -28,6 +29,19 @@ func (h *Handler) AuthRequired() gin.HandlerFunc {
 			return
 		}
 		c.Set(ctxKeyUsername, claims.Username)
+		c.Set(ctxKeyRole, claims.Role)
+		c.Next()
+	}
+}
+
+func (h *Handler) RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get(ctxKeyRole)
+		if role != "admin" {
+			respondError(c, http.StatusForbidden, fmt.Errorf("admin access required"))
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

@@ -35,11 +35,26 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			id         BIGSERIAL    PRIMARY KEY,
 			username   VARCHAR(255) UNIQUE NOT NULL,
 			password   VARCHAR(255) NOT NULL,
+			role       VARCHAR(20)  NOT NULL DEFAULT 'viewer',
 			created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 		)
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate admin_users: %w", err)
+	}
+	// Idempotent: add role column to existing installations
+	_, err = pool.Exec(ctx, `
+		ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'viewer'
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate admin_users role column: %w", err)
+	}
+	// Ensure the initial admin user always has the admin role
+	_, err = pool.Exec(ctx, `
+		UPDATE admin_users SET role = 'admin' WHERE username = 'admin' AND role != 'admin'
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate admin_users admin role: %w", err)
 	}
 
 	_, err = pool.Exec(ctx, `
@@ -98,7 +113,7 @@ func SeedAdmin(ctx context.Context, pool *pgxpool.Pool, username, passwordHash s
 		return nil
 	}
 	_, err := pool.Exec(ctx,
-		"INSERT INTO admin_users (username, password) VALUES ($1, $2)",
+		"INSERT INTO admin_users (username, password, role) VALUES ($1, $2, 'admin')",
 		username, passwordHash,
 	)
 	if err != nil {
