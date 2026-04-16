@@ -42,10 +42,10 @@
       </nav>
 
       <div class="sidebar-footer">
-        <span>
-          {{ username ?? '—' }}
-          <span v-if="role" class="badge" :class="role === 'admin' ? 'badge-warning' : 'badge-gray'" style="margin-left:4px;font-size:10px">{{ role }}</span>
-        </span>
+        <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0">
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ username ?? '—' }}</span>
+          <span v-if="role" class="badge" :class="role === 'admin' ? 'badge-warning' : 'badge-gray'" style="font-size:10px">{{ role }}</span>
+        </div>
         <button class="btn btn-ghost btn-sm" @click="doLogout">Sign out</button>
       </div>
     </aside>

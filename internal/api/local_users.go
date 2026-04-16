@@ -135,10 +135,14 @@ func (h *Handler) ResetLocalUserPassword(c *gin.Context) {
 	}
 	targetUsername := c.Param("username")
 	currentUsername, _ := c.Get(ctxKeyUsername)
+	current := currentUsername.(string)
 
-	// An admin's password can only be changed by that admin themselves.
-	// Check if target is an admin and the requester is a different user.
-	if targetUsername != currentUsername.(string) {
+	// Password change rules:
+	//   "admin" (the built-in superuser) → can change anyone's password
+	//   other admins                     → can change their own + viewers
+	//   viewers                          → can only change their own (enforced by RequireAdmin on this route,
+	//                                      but kept here as defence-in-depth)
+	if current != "admin" && targetUsername != current {
 		var targetRole string
 		err := h.db.QueryRow(c.Request.Context(),
 			"SELECT role FROM admin_users WHERE username=$1", targetUsername).Scan(&targetRole)
@@ -147,7 +151,7 @@ func (h *Handler) ResetLocalUserPassword(c *gin.Context) {
 			return
 		}
 		if targetRole == "admin" {
-			respondError(c, http.StatusForbidden, fmt.Errorf("cannot change another admin's password"))
+			respondError(c, http.StatusForbidden, fmt.Errorf("only the built-in admin can change another admin's password"))
 			return
 		}
 	}
