@@ -5,7 +5,7 @@ replicaCount: 1
 
 image:
   repository: truebad0ur/kubevalet
-  tag: "0.3.15"
+  tag: "0.3.16"
   pullPolicy: Always
 
 ## Kubernetes cluster info embedded in generated kubeconfigs.
