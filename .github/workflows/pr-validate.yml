@@ -17,7 +17,10 @@ jobs:
           cache: true
 
       - name: Go build
-        run: go build ./...
+        run: |
+          mkdir -p web/dist
+          touch web/dist/index.html
+          go build ./...
 
       - name: Go test
         run: go test ./...
