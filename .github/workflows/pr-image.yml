@@ -21,7 +21,7 @@ jobs:
   # Remove "ok-to-test" label when contributor pushes new commits
   unlabel:
     name: Remove ok-to-test on new push
-    if: github.event.action == 'synchronize'
+    if: github.event.action == 'synchronize' && github.event.pull_request.user.login != 'TrueBad0ur'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
