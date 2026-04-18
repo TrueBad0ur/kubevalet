@@ -230,6 +230,29 @@ make build
 ./bin/kubevalet
 ```
 
+## Custom RBAC rules — API groups
+
+Each rule covers exactly one API group. Resources from different groups must be split into separate rules:
+
+| Resource | API Group |
+|---|---|
+| `pods`, `secrets`, `configmaps`, `services` | `` (empty = core) |
+| `deployments`, `replicasets`, `statefulsets`, `daemonsets` | `apps` |
+| `cronjobs`, `jobs` | `batch` |
+| `ingresses` | `networking.k8s.io` |
+| `clusterroles`, `roles`, `rolebindings` | `rbac.authorization.k8s.io` |
+
+**Wrong** — `pods` won't work because it's not in the `apps` group:
+```
+API Groups: apps    Resources: pods, deployments
+```
+
+**Correct** — two separate rules:
+```
+Rule 1 — API Groups: (empty)   Resources: pods
+Rule 2 — API Groups: apps      Resources: deployments
+```
+
 ## Known limitations
 
 - **JWT role changes take effect only after token expiry.** When an admin demotes another admin to viewer (or changes any role), the existing JWT is not invalidated — the affected user retains their previous role until their token expires (default TTL: 24 h). To force immediate effect, the user must log out and log in again. This is an inherent trade-off of stateless JWT auth; adding server-side token blacklisting would require a shared revocation store.
