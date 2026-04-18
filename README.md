@@ -265,7 +265,7 @@ Rule 2 — API Groups: apps      Resources: deployments
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
 - [x] User expiry / certificate rotation reminders
-- [ ] Role templates (save and reuse custom RBAC configs)
+- [x] Role templates (save and reuse custom RBAC configs)
 - [ ] LDAP sync
 - [ ] CVE scanning in CI (Trivy)
 - [x] CI workflow for external PRs: `pull_request` (go build + test + helm lint + docker build --no-push, no secrets) and `pull_request_target` gated by `ok-to-test` label (build + push `pr-{N}` image to DockerHub, auto-remove label on new commits)
