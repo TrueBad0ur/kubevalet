@@ -22,8 +22,9 @@ Creates x509 users via the Kubernetes CSR API, issues kubeconfigs, and manages R
 - **Groups** — manage k8s Group subjects with their own RBAC; users added to a group via x509 O field inherit permissions automatically
 - Download / view generated kubeconfigs
 - **Graph view** — visualise any user's full access tree: cluster-wide role and per-namespace bindings
+- **Multi-cluster support** — manage users and groups across multiple Kubernetes clusters; switch between clusters via the sidebar; each cluster has its own isolated users/groups
 - **PostgreSQL as source of truth** — all user state (RBAC config, cert PEM, private key) stored in postgres; **Sync** button recreates any missing k8s objects from DB
-- Kubeconfig API server address configurable at runtime from the Settings UI (no redeploy needed)
+- Kubeconfig API server address configurable per cluster
 - Private keys stored in cluster Secrets and postgres — never logged or exposed raw
 - Simple username/password auth backed by PostgreSQL
 
@@ -264,7 +265,7 @@ Rule 2 — API Groups: apps      Resources: deployments
 - [x] Screenshots in README
 - [x] RBAC for local users (is_admin flag → admin can manage all users/passwords, regular users can only change own password)
 - [ ] Keycloak / OIDC integration
-- [ ] Multi-cluster support
+- [x] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
 - [x] User expiry / certificate rotation reminders
 - [x] Role templates (save and reuse custom RBAC configs)
