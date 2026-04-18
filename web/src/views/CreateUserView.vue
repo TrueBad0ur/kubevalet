@@ -209,6 +209,23 @@
       </div>
     </div>
 
+    <!-- Overwrite confirmation modal -->
+    <div v-if="confirmOverwrite" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">User already exists</div>
+        <div class="modal-body">
+          <p style="font-size:13.5px">User <strong class="font-mono">{{ form.name }}</strong> already exists. Delete and recreate with new settings?</p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="confirmOverwrite = false; pendingPayload = null">Cancel</button>
+          <button class="btn btn-danger" :disabled="loading" @click="overwriteUser">
+            <span v-if="loading" class="spinner" />
+            <span v-else>Overwrite</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Kubeconfig result modal -->
     <div v-if="result" class="modal-overlay">
       <div class="modal">
@@ -242,7 +259,7 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
-import { createUser, type CreateUserRequest, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
+import { createUser, deleteUser, type CreateUserRequest, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
 
 
@@ -311,12 +328,14 @@ function toggleVerb(rule: RuleDraft, verb: string) {
   if (idx === -1) rule.verbs.push(verb)
   else rule.verbs.splice(idx, 1)
 }
-const groupDraft      = ref('')
-const groupInput      = ref<HTMLInputElement | null>(null)
-const loading         = ref(false)
-const error           = ref('')
-const result          = ref<CreateUserResponse | null>(null)
-const copied          = ref(false)
+const groupDraft       = ref('')
+const groupInput       = ref<HTMLInputElement | null>(null)
+const loading          = ref(false)
+const error            = ref('')
+const result           = ref<CreateUserResponse | null>(null)
+const copied           = ref(false)
+const confirmOverwrite = ref(false)
+let pendingPayload: CreateUserRequest | null = null
 const availableGroups = ref<Group[]>([])
 const dropdownActive   = ref(-1)
 const groupFocused     = ref(false)
@@ -369,28 +388,49 @@ function onBackspace() {
 }
 
 async function submit() {
-  addGroup() // flush any pending draft
+  addGroup()
+  error.value = ''
+  loading.value = true
+  const payload: CreateUserRequest = { name: form.name, groups: form.groups }
+  if (bindingType.value === 'cluster') {
+    if (advanced.value) {
+      payload.rules = rules.value.map(draftToRule)
+    } else {
+      payload.clusterRole = form.clusterRole
+    }
+  } else if (bindingType.value === 'namespace') {
+    payload.namespaceBindings = nsBindings.value.map(nb => ({
+      namespace: nb.namespace,
+      ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+    })) as NamespaceBinding[]
+  }
+  try {
+    result.value = await createUser(payload)
+  } catch (e: any) {
+    if (e.response?.status === 409) {
+      pendingPayload = payload
+      confirmOverwrite.value = true
+    } else {
+      error.value = e.response?.data?.error ?? 'Failed to create user'
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+async function overwriteUser() {
+  if (!pendingPayload) return
+  confirmOverwrite.value = false
   error.value = ''
   loading.value = true
   try {
-    const payload: CreateUserRequest = { name: form.name, groups: form.groups }
-    if (bindingType.value === 'cluster') {
-      if (advanced.value) {
-        payload.rules = rules.value.map(draftToRule)
-      } else {
-        payload.clusterRole = form.clusterRole
-      }
-    } else if (bindingType.value === 'namespace') {
-      payload.namespaceBindings = nsBindings.value.map(nb => ({
-        namespace: nb.namespace,
-        ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
-      })) as NamespaceBinding[]
-    }
-    result.value = await createUser(payload)
+    await deleteUser(pendingPayload.name)
+    result.value = await createUser(pendingPayload)
   } catch (e: any) {
-    error.value = e.response?.data?.error ?? 'Failed to create user'
+    error.value = e.response?.data?.error ?? 'Failed to overwrite user'
   } finally {
     loading.value = false
+    pendingPayload = null
   }
 }
 
