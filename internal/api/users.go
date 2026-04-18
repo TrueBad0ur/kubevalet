@@ -763,7 +763,11 @@ func (h *Handler) userRBACType(ctx context.Context, clusterID int64, username st
 		_ = json.Unmarshal(nsJSON, &nsBindings)
 		return customRole && len(nsBindings) == 0, len(nsBindings) > 0
 	}
-	csr, err := h.k8s.GetCSR(ctx, username)
+	k8sClient, _ := h.mgr.Get(ctx, clusterID)
+	if k8sClient == nil {
+		return false, false
+	}
+	csr, err := k8sClient.GetCSR(ctx, username)
 	if err != nil {
 		return false, false
 	}
