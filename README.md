@@ -102,17 +102,23 @@ KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
 
 ### Reviewing PRs
 
-When a contributor opens a PR from a fork:
+#### Your own PRs
 
-1. **`pr-validate`** runs automatically — go build, tests, helm lint, docker build (no push). No secrets involved, safe for any fork.
+1. Open a PR — **`pr-validate`** runs automatically on every push: go build, tests, helm lint, docker build.
+2. When all checks pass, `pr-validate` automatically adds the `ok-to-test` label.
+3. **`pr-image`** triggers and pushes a test image tagged `<next-version>-<branch-name>` to DockerHub (e.g. `0.3.19-my-feature`).
+4. On the next push the label is re-cycled automatically — no manual action needed.
+5. When satisfied — squash merge.
 
-2. Review the code. If it looks good, add the label **`ok-to-test`**.
+> **Requires:** a `PAT_TOKEN` secret in repo Settings → Secrets → Actions (classic PAT with `repo` scope). This is needed because GitHub does not fire webhook events for labels added by the built-in `GITHUB_TOKEN`.
 
-3. **`pr-image`** triggers and builds a test image tagged as `<next-version>-<branch-name>` (e.g. last release is `v0.3.16`, branch is `super-feature` → `0.3.17-super-feature`). The image is pushed to DockerHub and the workflow comments on the PR with the deploy command.
+#### External contributor PRs
 
-4. If the contributor pushes new commits, the `ok-to-test` label is removed automatically — re-review and re-label to build again.
-
-5. When satisfied — squash merge the PR.
+1. **`pr-validate`** runs automatically — go build, tests, helm lint, docker build (no push). No secrets, safe for forks.
+2. Review the code. If it looks good, add the label **`ok-to-test`** manually.
+3. **`pr-image`** triggers and pushes the test image to DockerHub.
+4. If the contributor pushes new commits, `ok-to-test` is removed automatically — re-review and re-label to build again.
+5. When satisfied — squash merge.
 
 ### Release — when ready to ship
 
