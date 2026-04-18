@@ -7,6 +7,20 @@
         kubevalet
       </RouterLink>
 
+      <!-- Cluster switcher -->
+      <div v-if="clusters.length > 1" style="padding:0 12px 8px">
+        <select
+          :value="currentID"
+          @change="selectCluster(+($event.target as HTMLSelectElement).value)"
+          style="width:100%;font-size:12px;padding:4px 6px;border-radius:4px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer"
+        >
+          <option v-for="c in clusters" :key="c.id" :value="c.id">{{ c.name }}</option>
+        </select>
+      </div>
+      <div v-else-if="clusters.length === 1" style="padding:0 12px 8px;font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        {{ clusters[0].name }}
+      </div>
+
       <nav class="sidebar-nav">
         <RouterLink to="/" :class="{ active: route.path === '/' || route.path.startsWith('/users') }">
           <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
@@ -33,6 +47,11 @@
         <RouterLink to="/templates" :class="{ active: route.path === '/templates' }">
           <svg viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/></svg>
           Templates
+        </RouterLink>
+
+        <RouterLink v-if="isAdmin" to="/clusters" :class="{ active: route.path === '/clusters' }">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 5a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2V5zm14 1a1 1 0 11-2 0 1 1 0 012 0zM2 13a2 2 0 012-2h12a2 2 0 012 2v2a2 2 0 01-2 2H4a2 2 0 01-2-2v-2zm14 1a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd"/></svg>
+          Clusters
         </RouterLink>
 
         <RouterLink v-if="isAdmin" to="/local-users" :class="{ active: route.path === '/local-users' }">
@@ -71,14 +90,25 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
+import { useCluster } from '@/composables/useCluster'
+import { listClusters } from '@/api/clusters'
 
 defineProps<{ title: string }>()
 
 const route  = useRoute()
 const router = useRouter()
 const { username, role, logout, isAdmin } = useAuth()
+const { clusters, currentID, setClusters, selectCluster } = useCluster()
+
+onMounted(async () => {
+  try {
+    const list = await listClusters()
+    setClusters(list)
+  } catch { /* not authenticated yet */ }
+})
 
 function doLogout() {
   logout()

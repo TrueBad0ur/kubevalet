@@ -244,6 +244,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useCluster } from '@/composables/useCluster'
 import { listGroups, createGroup, updateGroup, deleteGroup, syncGroup, type Group } from '@/api/groups'
 import type { NamespaceBinding, PolicyRule } from '@/api/users'
 
@@ -288,13 +289,14 @@ function nbToDraft(nb: NamespaceBinding): NsBindingDraft {
 
 const groups   = ref<Group[]>([])
 const { isAdmin } = useAuth()
+const { currentID } = useCluster()
 
 const loading  = ref(true)
 const loadError = ref('')
 
 onMounted(async () => {
   try {
-    groups.value = await listGroups()
+    groups.value = await listGroups(currentID.value!)
   } catch (e: any) {
     loadError.value = e.response?.data?.error ?? 'Failed to load groups'
   } finally {
@@ -377,14 +379,14 @@ async function saveModal() {
     }
 
     if (modal.editing) {
-      await updateGroup(modal.editingName, payload)
+      await updateGroup(modal.editingName, payload, currentID.value!)
       const idx = groups.value.findIndex(g => g.name === modal.editingName)
       if (idx !== -1) {
         groups.value[idx] = { ...groups.value[idx], ...payload }
       }
     } else {
       payload.name = modal.name
-      const created = await createGroup(payload)
+      const created = await createGroup(payload, currentID.value!)
       groups.value.push(created)
     }
     closeModal()
@@ -402,7 +404,7 @@ const syncMsg   = ref('')
 async function doSync(name: string) {
   syncing.value = name
   try {
-    const res = await syncGroup(name)
+    const res = await syncGroup(name, currentID.value!)
     const repaired = res.repaired?.join(', ') || 'nothing missing'
     syncMsg.value = `Sync ${name}: ${repaired}`
     setTimeout(() => { syncMsg.value = '' }, 4000)
@@ -428,7 +430,7 @@ async function doDelete() {
   deleting.value = true
   delError.value = ''
   try {
-    await deleteGroup(delTarget.value.name)
+    await deleteGroup(delTarget.value.name, currentID.value!)
     groups.value = groups.value.filter(g => g.name !== delTarget.value!.name)
     delTarget.value = null
   } catch (e: any) {

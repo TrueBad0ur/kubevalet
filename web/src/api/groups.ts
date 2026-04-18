@@ -27,25 +27,29 @@ export interface UpdateGroupPayload {
   namespaceBindings?: NamespaceBinding[]
 }
 
-export async function listGroups(): Promise<Group[]> {
-  const res = await api.get<{ groups: Group[] }>('/groups')
+function cp(clusterID: number) {
+  return { params: { cluster_id: clusterID } }
+}
+
+export async function listGroups(clusterID: number): Promise<Group[]> {
+  const res = await api.get<{ groups: Group[] }>('/groups', cp(clusterID))
   return res.data.groups
 }
 
-export async function createGroup(payload: CreateGroupPayload): Promise<Group> {
-  const res = await api.post<Group>('/groups', payload)
+export async function createGroup(payload: CreateGroupPayload, clusterID: number): Promise<Group> {
+  const res = await api.post<Group>('/groups', payload, cp(clusterID))
   return res.data
 }
 
-export async function updateGroup(name: string, payload: UpdateGroupPayload): Promise<void> {
-  await api.put(`/groups/${name}`, payload)
+export async function updateGroup(name: string, payload: UpdateGroupPayload, clusterID: number): Promise<void> {
+  await api.put(`/groups/${name}`, payload, cp(clusterID))
 }
 
-export async function deleteGroup(name: string): Promise<void> {
-  await api.delete(`/groups/${name}`)
+export async function deleteGroup(name: string, clusterID: number): Promise<void> {
+  await api.delete(`/groups/${name}`, cp(clusterID))
 }
 
-export async function syncGroup(name: string): Promise<{ repaired: string[] }> {
-  const res = await api.post<{ repaired: string[] }>(`/groups/${name}/sync`)
+export async function syncGroup(name: string, clusterID: number): Promise<{ repaired: string[] }> {
+  const res = await api.post<{ repaired: string[] }>(`/groups/${name}/sync`, {}, cp(clusterID))
   return res.data
 }

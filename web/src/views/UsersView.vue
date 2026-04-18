@@ -470,6 +470,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { useAuth } from '@/composables/useAuth'
+import { useCluster } from '@/composables/useCluster'
 import { listUsers, deleteUser, updateUserRBAC, syncUser, renewCertificate, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
 import { client } from '@/api/client'
@@ -509,6 +510,7 @@ function editToggleVerb(rule: RuleDraft, verb: string) {
 
 const users       = ref<User[]>([])
 const { isAdmin } = useAuth()
+const { currentID } = useCluster()
 
 const loading     = ref(true)
 const error       = ref('')
@@ -530,7 +532,7 @@ function accessRoleClass(role: string): string {
 async function doSync(name: string) {
   syncing.value = name
   try {
-    const res = await syncUser(name)
+    const res = await syncUser(name, currentID.value!)
     const repaired = res.repaired?.join(', ') || 'nothing missing'
     editSuccessMsg.value = `Sync ${name}: ${repaired}`
     setTimeout(() => { editSuccessMsg.value = '' }, 4000)
@@ -802,7 +804,7 @@ async function submitEdit() {
       })) as NamespaceBinding[]
     }
     const name = editTarget.value.name
-    const res: UpdateRBACResponse = await updateUserRBAC(name, payload)
+    const res: UpdateRBACResponse = await updateUserRBAC(name, payload, currentID.value!)
     if (res.kubeconfig) {
       editKubeconfig.value     = res.kubeconfig
       editKubeconfigUser.value = name
@@ -824,7 +826,7 @@ async function load() {
   loading.value = true
   error.value   = ''
   try {
-    users.value = await listUsers()
+    users.value = await listUsers(currentID.value!)
   } catch (e: any) {
     error.value = e.response?.data?.error ?? 'Failed to load users'
   } finally {
@@ -836,7 +838,7 @@ async function viewKubeconfig(name: string) {
   viewing.value = name
   error.value = ''
   try {
-    const res = await client.get(`/users/${name}/kubeconfig`, { responseType: 'blob' })
+    const res = await client.get(`/users/${name}/kubeconfig`, { responseType: 'blob', params: { cluster_id: currentID.value } })
     viewContent.value = await res.data.text()
     viewTarget.value = name
   } catch (e: any) {
@@ -876,7 +878,7 @@ async function copyViewed() {
 async function downloadKubeconfig(name: string) {
   downloading.value = name
   try {
-    const res = await client.get(`/users/${name}/kubeconfig`, { responseType: 'blob' })
+    const res = await client.get(`/users/${name}/kubeconfig`, { responseType: 'blob', params: { cluster_id: currentID.value } })
     const url = URL.createObjectURL(new Blob([res.data], { type: 'application/x-yaml' }))
     const a = document.createElement('a')
     a.href = url
@@ -907,7 +909,7 @@ async function doDelete() {
   if (!deleteTarget.value) return
   deleting.value = deleteTarget.value
   try {
-    await deleteUser(deleteTarget.value)
+    await deleteUser(deleteTarget.value, currentID.value!)
     deleteTarget.value = null
     await load()
   } catch (e: any) {
@@ -955,7 +957,7 @@ async function doRenew(name: string) {
   renewing.value = name
   error.value = ''
   try {
-    const res = await renewCertificate(name)
+    const res = await renewCertificate(name, currentID.value!)
     renewKubeconfig.value      = res.kubeconfig
     renewKubeconfigUser.value  = name
     renewKubeconfigCopied.value = false
@@ -989,7 +991,7 @@ function downloadRenewKubeconfig() {
 
 onMounted(async () => {
   await load()
-  try { allGroups.value = await listGroups() } catch {}
+  try { allGroups.value = await listGroups(currentID.value!) } catch {}
   try { allTemplates.value = await listTemplates() } catch {}
 })
 </script>
