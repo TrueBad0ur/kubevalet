@@ -235,10 +235,17 @@
             <input v-model="templateDescription" type="text" class="form-input" placeholder="Optional description" />
           </div>
           <div v-if="saveTemplateError" class="alert alert-error" style="margin-top:12px">{{ saveTemplateError }}</div>
+          <div v-if="confirmTemplateOverwrite" class="alert alert-error" style="margin-top:12px">
+            Template <strong>{{ templateName }}</strong> already exists. Overwrite?
+          </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="saveTemplateOpen = false">Cancel</button>
-          <button class="btn btn-primary" :disabled="savingTemplate || !templateName" @click="doSaveTemplate">
+          <button class="btn btn-ghost" @click="saveTemplateOpen = false; confirmTemplateOverwrite = false">Cancel</button>
+          <button v-if="confirmTemplateOverwrite" class="btn btn-danger" :disabled="savingTemplate" @click="doSaveTemplate(true)">
+            <span v-if="savingTemplate" class="spinner" />
+            <span v-else>Overwrite</span>
+          </button>
+          <button v-else class="btn btn-primary" :disabled="savingTemplate || !templateName" @click="doSaveTemplate()">
             <span v-if="savingTemplate" class="spinner" />
             <span v-else>Save</span>
           </button>
@@ -376,11 +383,12 @@ const confirmOverwrite = ref(false)
 let pendingPayload: CreateUserRequest | null = null
 
 const availableTemplates  = ref<RoleTemplate[]>([])
-const saveTemplateOpen    = ref(false)
-const templateName        = ref('')
-const templateDescription = ref('')
-const savingTemplate      = ref(false)
-const saveTemplateError   = ref('')
+const saveTemplateOpen      = ref(false)
+const templateName          = ref('')
+const templateDescription   = ref('')
+const savingTemplate        = ref(false)
+const saveTemplateError     = ref('')
+const confirmTemplateOverwrite = ref(false)
 const availableGroups = ref<Group[]>([])
 const dropdownActive   = ref(-1)
 const groupFocused     = ref(false)
@@ -472,32 +480,44 @@ function openSaveTemplate() {
   templateName.value = ''
   templateDescription.value = ''
   saveTemplateError.value = ''
+  confirmTemplateOverwrite.value = false
   saveTemplateOpen.value = true
 }
 
-async function doSaveTemplate() {
+function buildTemplateReq() {
+  const req: Parameters<typeof createTemplate>[0] = { name: templateName.value, description: templateDescription.value }
+  if (bindingType.value === 'cluster') {
+    if (advanced.value) {
+      req.customRole = true
+      req.rules = rules.value.map(draftToRule)
+    } else {
+      req.clusterRole = form.clusterRole
+    }
+  } else if (bindingType.value === 'namespace') {
+    req.namespaceBindings = nsBindings.value.map(nb => ({
+      namespace: nb.namespace,
+      ...(nb.advanced ? { customRole: true, rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+    }))
+  }
+  return req
+}
+
+async function doSaveTemplate(overwrite = false) {
   savingTemplate.value = true
   saveTemplateError.value = ''
   try {
-    const req: Parameters<typeof createTemplate>[0] = { name: templateName.value, description: templateDescription.value }
-    if (bindingType.value === 'cluster') {
-      if (advanced.value) {
-        req.customRole = true
-        req.rules = rules.value.map(draftToRule)
-      } else {
-        req.clusterRole = form.clusterRole
-      }
-    } else if (bindingType.value === 'namespace') {
-      req.namespaceBindings = nsBindings.value.map(nb => ({
-        namespace: nb.namespace,
-        ...(nb.advanced ? { customRole: true, rules: nb.rules.map(draftToRule) } : { role: nb.role }),
-      }))
-    }
-    const saved = await createTemplate(req)
-    availableTemplates.value.push(saved)
+    const saved = await createTemplate(buildTemplateReq(), overwrite)
+    const idx = availableTemplates.value.findIndex(t => t.name === saved.name)
+    if (idx >= 0) availableTemplates.value[idx] = saved
+    else availableTemplates.value.push(saved)
     saveTemplateOpen.value = false
+    confirmTemplateOverwrite.value = false
   } catch (e: any) {
-    saveTemplateError.value = e.response?.data?.error ?? 'Failed to save template'
+    if (e.response?.status === 409) {
+      confirmTemplateOverwrite.value = true
+    } else {
+      saveTemplateError.value = e.response?.data?.error ?? 'Failed to save template'
+    }
   } finally {
     savingTemplate.value = false
   }

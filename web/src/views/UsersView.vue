@@ -342,10 +342,17 @@
             <input v-model="editTemplateDescription" type="text" class="form-input" placeholder="Optional description" />
           </div>
           <div v-if="editSaveTemplateError" class="alert alert-error" style="margin-top:12px">{{ editSaveTemplateError }}</div>
+          <div v-if="editConfirmTemplateOverwrite" class="alert alert-error" style="margin-top:12px">
+            Template <strong>{{ editTemplateName }}</strong> already exists. Overwrite?
+          </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-ghost" @click="editSaveTemplateOpen = false">Cancel</button>
-          <button class="btn btn-primary" :disabled="editSavingTemplate || !editTemplateName" @click="doEditSaveTemplate">
+          <button class="btn btn-ghost" @click="editSaveTemplateOpen = false; editConfirmTemplateOverwrite = false">Cancel</button>
+          <button v-if="editConfirmTemplateOverwrite" class="btn btn-danger" :disabled="editSavingTemplate" @click="doEditSaveTemplate(true)">
+            <span v-if="editSavingTemplate" class="spinner" />
+            <span v-else>Overwrite</span>
+          </button>
+          <button v-else class="btn btn-primary" :disabled="editSavingTemplate || !editTemplateName" @click="doEditSaveTemplate()">
             <span v-if="editSavingTemplate" class="spinner" />
             <span v-else>Save</span>
           </button>
@@ -601,11 +608,12 @@ const editSuccessMsg    = ref('')
 const allGroups    = ref<Group[]>([])
 const allTemplates = ref<RoleTemplate[]>([])
 
-const editSaveTemplateOpen    = ref(false)
-const editTemplateName        = ref('')
-const editTemplateDescription = ref('')
-const editSavingTemplate      = ref(false)
-const editSaveTemplateError   = ref('')
+const editSaveTemplateOpen         = ref(false)
+const editTemplateName             = ref('')
+const editTemplateDescription      = ref('')
+const editSavingTemplate           = ref(false)
+const editSaveTemplateError        = ref('')
+const editConfirmTemplateOverwrite = ref(false)
 
 const editGroupFocused      = ref(false)
 const editDropdownActive    = ref(-1)
@@ -685,32 +693,44 @@ function openEditSaveTemplate() {
   editTemplateName.value = ''
   editTemplateDescription.value = ''
   editSaveTemplateError.value = ''
+  editConfirmTemplateOverwrite.value = false
   editSaveTemplateOpen.value = true
 }
 
-async function doEditSaveTemplate() {
+function buildEditTemplateReq() {
+  const req: Parameters<typeof createTemplate>[0] = { name: editTemplateName.value, description: editTemplateDescription.value }
+  if (editBindingType.value === 'cluster') {
+    if (editAdvanced.value) {
+      req.customRole = true
+      req.rules = editRules.value.map(draftToRule)
+    } else {
+      req.clusterRole = editForm.clusterRole
+    }
+  } else if (editBindingType.value === 'namespace') {
+    req.namespaceBindings = editNsBindings.value.map(nb => ({
+      namespace: nb.namespace,
+      ...(nb.advanced ? { customRole: true, rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+    }))
+  }
+  return req
+}
+
+async function doEditSaveTemplate(overwrite = false) {
   editSavingTemplate.value = true
   editSaveTemplateError.value = ''
   try {
-    const req: Parameters<typeof createTemplate>[0] = { name: editTemplateName.value, description: editTemplateDescription.value }
-    if (editBindingType.value === 'cluster') {
-      if (editAdvanced.value) {
-        req.customRole = true
-        req.rules = editRules.value.map(draftToRule)
-      } else {
-        req.clusterRole = editForm.clusterRole
-      }
-    } else if (editBindingType.value === 'namespace') {
-      req.namespaceBindings = editNsBindings.value.map(nb => ({
-        namespace: nb.namespace,
-        ...(nb.advanced ? { customRole: true, rules: nb.rules.map(draftToRule) } : { role: nb.role }),
-      }))
-    }
-    const saved = await createTemplate(req)
-    allTemplates.value.push(saved)
+    const saved = await createTemplate(buildEditTemplateReq(), overwrite)
+    const idx = allTemplates.value.findIndex(t => t.name === saved.name)
+    if (idx >= 0) allTemplates.value[idx] = saved
+    else allTemplates.value.push(saved)
     editSaveTemplateOpen.value = false
+    editConfirmTemplateOverwrite.value = false
   } catch (e: any) {
-    editSaveTemplateError.value = e.response?.data?.error ?? 'Failed to save template'
+    if (e.response?.status === 409) {
+      editConfirmTemplateOverwrite.value = true
+    } else {
+      editSaveTemplateError.value = e.response?.data?.error ?? 'Failed to save template'
+    }
   } finally {
     editSavingTemplate.value = false
   }

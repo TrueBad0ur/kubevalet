@@ -26,8 +26,8 @@ export async function listTemplates(): Promise<RoleTemplate[]> {
   return r.data.templates
 }
 
-export async function createTemplate(req: CreateTemplateRequest): Promise<RoleTemplate> {
-  const r = await api.post('/templates', req)
+export async function createTemplate(req: CreateTemplateRequest, overwrite = false): Promise<RoleTemplate> {
+  const r = await api.post(`/templates${overwrite ? '?overwrite=true' : ''}`, req)
   return r.data
 }
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -51,16 +52,33 @@ func (h *Handler) CreateTemplate(c *gin.Context) {
 	rulesJSON, _ := json.Marshal(req.Rules)
 	nsJSON, _ := json.Marshal(req.NamespaceBindings)
 
+	overwrite := c.Query("overwrite") == "true"
+
 	var id int64
 	var createdAt time.Time
-	err := h.db.QueryRow(c.Request.Context(), `
-		INSERT INTO role_templates (name, description, cluster_role, custom_role, rules, ns_bindings)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, created_at
-	`, req.Name, req.Description, req.ClusterRole, req.CustomRole, rulesJSON, nsJSON).Scan(&id, &createdAt)
+	var err error
+	if overwrite {
+		err = h.db.QueryRow(c.Request.Context(), `
+			INSERT INTO role_templates (name, description, cluster_role, custom_role, rules, ns_bindings)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (name) DO UPDATE SET
+				description = EXCLUDED.description,
+				cluster_role = EXCLUDED.cluster_role,
+				custom_role = EXCLUDED.custom_role,
+				rules = EXCLUDED.rules,
+				ns_bindings = EXCLUDED.ns_bindings
+			RETURNING id, created_at
+		`, req.Name, req.Description, req.ClusterRole, req.CustomRole, rulesJSON, nsJSON).Scan(&id, &createdAt)
+	} else {
+		err = h.db.QueryRow(c.Request.Context(), `
+			INSERT INTO role_templates (name, description, cluster_role, custom_role, rules, ns_bindings)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			RETURNING id, created_at
+		`, req.Name, req.Description, req.ClusterRole, req.CustomRole, rulesJSON, nsJSON).Scan(&id, &createdAt)
+	}
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok && pgErr.Code == "23505" {
-			respondError(c, http.StatusConflict, err)
+			respondError(c, http.StatusConflict, fmt.Errorf("template %q already exists", req.Name))
 			return
 		}
 		respondError(c, http.StatusInternalServerError, err)
