@@ -182,6 +182,9 @@
               <label class="form-label">Access scope</label>
               <div class="radio-group">
                 <label class="radio-option">
+                  <input type="radio" v-model="editBindingType" value="none" /> Groups only (no direct RBAC)
+                </label>
+                <label class="radio-option">
                   <input type="radio" v-model="editBindingType" value="cluster" /> Cluster-wide
                 </label>
                 <label class="radio-option">
@@ -545,7 +548,7 @@ function editEmptyNsBinding(): NsBindingEditDraft {
 
 const editTarget        = ref<User | null>(null)
 const editOriginalGroups = ref<string[]>([])
-const editBindingType   = ref<'cluster' | 'namespace'>('cluster')
+const editBindingType   = ref<'none' | 'cluster' | 'namespace'>('none')
 const editAdvanced      = ref(false)
 const editForm          = reactive({ clusterRole: '' })
 const editGroups        = ref<string[]>([])
@@ -609,7 +612,8 @@ function openEdit(u: User) {
   editOriginalGroups.value = [...(u.groups ?? [])]
   editGroupDraft.value     = ''
   const hasNs = !!(u.namespaceBindings?.length)
-  editBindingType.value = hasNs ? 'namespace' : 'cluster'
+  const hasCluster = !!(u.clusterRole || u.customRole || u.rules?.length)
+  editBindingType.value = hasNs ? 'namespace' : hasCluster ? 'cluster' : 'none'
   editAdvanced.value    = !!u.customRole
   editForm.clusterRole  = u.clusterRole ?? ''
   editRules.value       = u.rules?.length ? u.rules.map(ruleToDraft) : [editEmptyRule()]
