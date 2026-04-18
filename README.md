@@ -240,3 +240,4 @@ make build
 - [ ] LDAP sync
 - [ ] CVE scanning in CI (Trivy)
 - [x] CI workflow for external PRs: `pull_request` (go build + test + helm lint + docker build --no-push, no secrets) and `pull_request_target` gated by `ok-to-test` label (build + push `pr-{N}` image to DockerHub, auto-remove label on new commits)
+- [ ] Write tests for all
