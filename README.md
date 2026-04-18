@@ -255,6 +255,8 @@ Rule 2 — API Groups: apps      Resources: deployments
 
 ## Known limitations
 
+- **Cluster kubeconfigs stored in plaintext.** Multi-cluster support stores kubeconfigs (including credentials) in PostgreSQL without encryption. Anyone with read access to the database can extract cluster credentials. Encrypt the database at rest (e.g. via LUKS, cloud provider encryption, or pgcrypto) before using this in production. Application-level encryption may be added in a future release.
+
 - **JWT role changes take effect only after token expiry.** When an admin demotes another admin to viewer (or changes any role), the existing JWT is not invalidated — the affected user retains their previous role until their token expires (default TTL: 24 h). To force immediate effect, the user must log out and log in again. This is an inherent trade-off of stateless JWT auth; adding server-side token blacklisting would require a shared revocation store.
 
 ## Roadmap

@@ -56,6 +56,13 @@ func main() {
 		log.Printf("admin user %q ready", cfg.AdminUsername)
 	}
 
+	// Seed default in-cluster entry (no-op if already exists)
+	defaultClusterID, err := db.SeedDefaultCluster(ctx, pool, cfg.ClusterServer, cfg.ClusterName)
+	if err != nil {
+		log.Fatalf("seed default cluster: %v", err)
+	}
+	log.Printf("default cluster id=%d", defaultClusterID)
+
 	if cfg.JWTSecret == "" {
 		log.Fatal("JWT_SECRET must be set (Helm auto-generates it on first install)")
 	}
