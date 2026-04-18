@@ -1,15 +1,16 @@
 name: PR image
 
 # Security model:
-#   - pr-validate runs automatically for all PRs (no secrets, safe for forks)
-#   - This workflow requires a maintainer to add "ok-to-test" label after reviewing the code
-#   - Runs in the context of the base repo (has secrets), checks out the PR HEAD SHA explicitly
-#   - Label is removed after each build — new commits require re-review
+#   - For own PRs: triggered via repository_dispatch from pr-validate (no label involvement)
+#   - For external PRs: triggered by maintainer adding "ok-to-test" label after code review
+#     New commits from external contributors remove the label, requiring re-review.
 #
-# Image tag is derived automatically: <next-patch-version>-<branch-name>
-# e.g. branch "super-feature" with latest release v0.3.16 → truebad0ur/kubevalet:0.3.17-super-feature
+# Image tag: <next-patch-version>-<branch-name>
+# e.g. latest release v0.3.16, branch "super-feature" → truebad0ur/kubevalet:0.3.17-super-feature
 
 on:
+  repository_dispatch:
+    types: [build-pr-image]
   pull_request_target:
     types: [labeled, synchronize]
     branches: [main]
@@ -18,10 +19,10 @@ env:
   IMAGE: truebad0ur/kubevalet
 
 jobs:
-  # Remove "ok-to-test" label when contributor pushes new commits
+  # Remove "ok-to-test" label when external contributor pushes new commits
   unlabel:
     name: Remove ok-to-test on new push
-    if: github.event.action == 'synchronize' && github.event.pull_request.user.login != 'TrueBad0ur'
+    if: github.event_name == 'pull_request_target' && github.event.action == 'synchronize' && github.event.pull_request.user.login != 'TrueBad0ur'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -44,32 +45,28 @@ jobs:
               body: '⚠️ New commits pushed — `ok-to-test` label removed. Re-review required before building.',
             })
 
-  # Build and push PR image after maintainer adds "ok-to-test" label
+  # Build and push PR image
   build:
     name: Build and push PR image
-    if: github.event.action == 'labeled' && github.event.label.name == 'ok-to-test'
+    if: |
+      github.event_name == 'repository_dispatch' ||
+      (github.event_name == 'pull_request_target' && github.event.action == 'labeled' && github.event.label.name == 'ok-to-test')
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0  # needed to read all tags
+          ref: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.head_sha || github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
       - name: Compute image tag
         id: tag
         run: |
-          # Get latest semver tag, increment patch, append branch name
           LATEST=$(git tag -l 'v[0-9]*' | sort -V | tail -1 | sed 's/^v//')
           [ -z "$LATEST" ] && LATEST="0.0.0"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST"
           NEXT="${MAJOR}.${MINOR}.$((PATCH + 1))"
-          BRANCH=$(echo "${{ github.event.pull_request.head.ref }}" \
-            | tr '[:upper:]' '[:lower:]' \
-            | sed 's/[^a-z0-9._-]/-/g' \
-            | sed 's/--*/-/g' \
-            | cut -c1-50)
+          RAW_BRANCH="${{ github.event_name == 'repository_dispatch' && github.event.client_payload.head_ref || github.event.pull_request.head.ref }}"
+          BRANCH=$(echo "$RAW_BRANCH" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | sed 's/--*/-/g' | cut -c1-50)
           echo "tag=${NEXT}-${BRANCH}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
@@ -91,5 +88,3 @@ jobs:
           tags: ${{ env.IMAGE }}:${{ steps.tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-

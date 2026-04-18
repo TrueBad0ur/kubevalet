@@ -44,7 +44,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Auto-label or notify
+      - name: Trigger image build or notify
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.PAT_TOKEN || github.token }}
@@ -52,20 +52,16 @@ jobs:
             const author = context.payload.pull_request.user.login
             const pr = context.payload.pull_request.number
             if (author === 'TrueBad0ur') {
-              // Remove first so the labeled event always fires even if label was already present
-              try {
-                await github.rest.issues.removeLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr,
-                  name: 'ok-to-test',
-                })
-              } catch {}
-              await github.rest.issues.addLabels({
+              // Trigger pr-image directly via dispatch — no label churn in PR history
+              await github.rest.repos.createDispatchEvent({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: pr,
-                labels: ['ok-to-test'],
+                event_type: 'build-pr-image',
+                client_payload: {
+                  pr_number: pr,
+                  head_sha: context.payload.pull_request.head.sha,
+                  head_ref: context.payload.pull_request.head.ref,
+                },
               })
             } else {
               await github.rest.issues.createComment({
