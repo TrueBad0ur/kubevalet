@@ -52,6 +52,15 @@ jobs:
             const author = context.payload.pull_request.user.login
             const pr = context.payload.pull_request.number
             if (author === 'TrueBad0ur') {
+              // Remove first so the labeled event always fires even if label was already present
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr,
+                  name: 'ok-to-test',
+                })
+              } catch {}
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
