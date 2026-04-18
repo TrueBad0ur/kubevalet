@@ -1,4 +1,4 @@
-import api from './client'
+import { client as api } from './client'
 import type { PolicyRule, NamespaceBinding } from './users'
 
 export interface RoleTemplate {
