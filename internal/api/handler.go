@@ -58,6 +58,10 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	admin.DELETE("/local-users/:username", h.DeleteLocalUser)
 	admin.PUT("/local-users/:username/password", h.ResetLocalUserPassword)
 	admin.PUT("/local-users/:username/role", h.UpdateLocalUserRole)
+
+	protected.GET("/templates", h.ListTemplates)
+	admin.POST("/templates", h.CreateTemplate)
+	admin.DELETE("/templates/:id", h.DeleteTemplate)
 }
 
 type errorResponse struct {

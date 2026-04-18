@@ -102,17 +102,23 @@ KUBECONFIG=~/.kube/local-config helm upgrade kubevalet ./charts/kubevalet \
 
 ### Reviewing PRs
 
-When a contributor opens a PR from a fork:
+#### Your own PRs
 
-1. **`pr-validate`** runs automatically — go build, tests, helm lint, docker build (no push). No secrets involved, safe for any fork.
+1. Open a PR — **`pr-validate`** runs automatically on every push: go build, tests, helm lint, docker build.
+2. When all checks pass, `pr-validate` automatically adds the `ok-to-test` label.
+3. **`pr-image`** triggers and pushes a test image tagged `<next-version>-<branch-name>` to DockerHub (e.g. `0.3.19-my-feature`).
+4. On the next push the label is re-cycled automatically — no manual action needed.
+5. When satisfied — squash merge.
 
-2. Review the code. If it looks good, add the label **`ok-to-test`**.
+> **Requires:** a `PAT_TOKEN` secret in repo Settings → Secrets → Actions (classic PAT with `repo` scope). This is needed because GitHub does not fire webhook events for labels added by the built-in `GITHUB_TOKEN`.
 
-3. **`pr-image`** triggers and builds a test image tagged as `<next-version>-<branch-name>` (e.g. last release is `v0.3.16`, branch is `super-feature` → `0.3.17-super-feature`). The image is pushed to DockerHub and the workflow comments on the PR with the deploy command.
+#### External contributor PRs
 
-4. If the contributor pushes new commits, the `ok-to-test` label is removed automatically — re-review and re-label to build again.
-
-5. When satisfied — squash merge the PR.
+1. **`pr-validate`** runs automatically — go build, tests, helm lint, docker build (no push). No secrets, safe for forks.
+2. Review the code. If it looks good, add the label **`ok-to-test`** manually.
+3. **`pr-image`** triggers and pushes the test image to DockerHub.
+4. If the contributor pushes new commits, `ok-to-test` is removed automatically — re-review and re-label to build again.
+5. When satisfied — squash merge.
 
 ### Release — when ready to ship
 
@@ -224,6 +230,29 @@ make build
 ./bin/kubevalet
 ```
 
+## Custom RBAC rules — API groups
+
+Each rule covers exactly one API group. Resources from different groups must be split into separate rules:
+
+| Resource | API Group |
+|---|---|
+| `pods`, `secrets`, `configmaps`, `services` | `` (empty = core) |
+| `deployments`, `replicasets`, `statefulsets`, `daemonsets` | `apps` |
+| `cronjobs`, `jobs` | `batch` |
+| `ingresses` | `networking.k8s.io` |
+| `clusterroles`, `roles`, `rolebindings` | `rbac.authorization.k8s.io` |
+
+**Wrong** — `pods` won't work because it's not in the `apps` group:
+```
+API Groups: apps    Resources: pods, deployments
+```
+
+**Correct** — two separate rules:
+```
+Rule 1 — API Groups: (empty)   Resources: pods
+Rule 2 — API Groups: apps      Resources: deployments
+```
+
 ## Known limitations
 
 - **JWT role changes take effect only after token expiry.** When an admin demotes another admin to viewer (or changes any role), the existing JWT is not invalidated — the affected user retains their previous role until their token expires (default TTL: 24 h). To force immediate effect, the user must log out and log in again. This is an inherent trade-off of stateless JWT auth; adding server-side token blacklisting would require a shared revocation store.
@@ -236,7 +265,7 @@ make build
 - [ ] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
 - [x] User expiry / certificate rotation reminders
-- [ ] Role templates (save and reuse custom RBAC configs)
+- [x] Role templates (save and reuse custom RBAC configs)
 - [ ] LDAP sync
 - [ ] CVE scanning in CI (Trivy)
 - [x] CI workflow for external PRs: `pull_request` (go build + test + helm lint + docker build --no-push, no secrets) and `pull_request_target` gated by `ok-to-test` label (build + push `pr-{N}` image to DockerHub, auto-remove label on new commits)

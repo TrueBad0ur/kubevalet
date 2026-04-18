@@ -138,6 +138,14 @@
           </div>
           <form @submit.prevent="submitEdit">
 
+            <div v-if="allTemplates.length" class="form-group">
+              <label class="form-label">Load template</label>
+              <select class="form-select" @change="applyEditTemplate(($event.target as HTMLSelectElement).value)">
+                <option value="">— select template —</option>
+                <option v-for="t in allTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
+
             <div class="form-group" style="position:relative">
               <label class="form-label">Groups</label>
               <div class="tags-input" @click="editGroupInput?.focus()">
@@ -309,12 +317,45 @@
 
             <div class="modal-footer" style="padding:0;border:none;margin-top:4px">
               <button type="button" class="btn btn-ghost" @click="editTarget = null">Cancel</button>
+              <button type="button" class="btn btn-ghost" @click="openEditSaveTemplate">Save as template</button>
               <button type="submit" class="btn btn-primary" :disabled="editSaving">
                 <span v-if="editSaving" class="spinner" />
                 <span v-else>Save</span>
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save as template modal (edit) -->
+    <div v-if="editSaveTemplateOpen" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">Save as template</div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Template name <span class="required">*</span></label>
+            <input v-model="editTemplateName" type="text" class="form-input" placeholder="e.g. read-only-namespaced" />
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Description</label>
+            <input v-model="editTemplateDescription" type="text" class="form-input" placeholder="Optional description" />
+          </div>
+          <div v-if="editSaveTemplateError" class="alert alert-error" style="margin-top:12px">{{ editSaveTemplateError }}</div>
+          <div v-if="editConfirmTemplateOverwrite" class="alert alert-error" style="margin-top:12px">
+            Template <strong>{{ editTemplateName }}</strong> already exists. Overwrite?
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="editSaveTemplateOpen = false; editConfirmTemplateOverwrite = false">Cancel</button>
+          <button v-if="editConfirmTemplateOverwrite" class="btn btn-danger" :disabled="editSavingTemplate" @click="doEditSaveTemplate(true)">
+            <span v-if="editSavingTemplate" class="spinner" />
+            <span v-else>Overwrite</span>
+          </button>
+          <button v-else class="btn btn-primary" :disabled="editSavingTemplate || !editTemplateName" @click="doEditSaveTemplate()">
+            <span v-if="editSavingTemplate" class="spinner" />
+            <span v-else>Save</span>
+          </button>
         </div>
       </div>
     </div>
@@ -432,6 +473,7 @@ import { useAuth } from '@/composables/useAuth'
 import { listUsers, deleteUser, updateUserRBAC, syncUser, renewCertificate, type User, type NamespaceBinding, type PolicyRule, type UpdateRBACResponse } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
 import { client } from '@/api/client'
+import { listTemplates, createTemplate, type RoleTemplate } from '@/api/templates'
 
 const EDIT_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
 
@@ -563,7 +605,15 @@ const editKubeconfigUser = ref('')
 const editKubeconfigCopied = ref(false)
 const editSuccessMsg    = ref('')
 
-const allGroups = ref<Group[]>([])
+const allGroups    = ref<Group[]>([])
+const allTemplates = ref<RoleTemplate[]>([])
+
+const editSaveTemplateOpen         = ref(false)
+const editTemplateName             = ref('')
+const editTemplateDescription      = ref('')
+const editSavingTemplate           = ref(false)
+const editSaveTemplateError        = ref('')
+const editConfirmTemplateOverwrite = ref(false)
 
 const editGroupFocused      = ref(false)
 const editDropdownActive    = ref(-1)
@@ -603,6 +653,88 @@ function editAddGroup() {
 }
 function editRemoveGroup(g: string) { editGroups.value = editGroups.value.filter(x => x !== g) }
 function editOnBackspace() { if (!editGroupDraft.value && editGroups.value.length) editGroups.value.pop() }
+
+function applyEditTemplate(idStr: string) {
+  const t = allTemplates.value.find(t => String(t.id) === idStr)
+  if (!t) return
+  if (t.namespaceBindings?.length) {
+    editBindingType.value = 'namespace'
+    editNsBindings.value = t.namespaceBindings.map(nb => ({
+      namespace: nb.namespace,
+      role: nb.role ?? '',
+      advanced: !!nb.customRole,
+      rules: nb.rules?.length ? nb.rules.map(r => ({
+        apiGroups: r.apiGroups?.join(', ') ?? '',
+        resources: r.resources?.join(', ') ?? '',
+        verbs: r.verbs ?? [],
+        verbCustom: '',
+      })) : [editEmptyRule()],
+    }))
+  } else if (t.customRole && t.rules?.length) {
+    editBindingType.value = 'cluster'
+    editAdvanced.value = true
+    editForm.clusterRole = ''
+    editRules.value = t.rules.map(r => ({
+      apiGroups: r.apiGroups?.join(', ') ?? '',
+      resources: r.resources?.join(', ') ?? '',
+      verbs: r.verbs ?? [],
+      verbCustom: '',
+    }))
+  } else if (t.clusterRole) {
+    editBindingType.value = 'cluster'
+    editAdvanced.value = false
+    editForm.clusterRole = t.clusterRole
+  } else {
+    editBindingType.value = 'none'
+  }
+}
+
+function openEditSaveTemplate() {
+  editTemplateName.value = ''
+  editTemplateDescription.value = ''
+  editSaveTemplateError.value = ''
+  editConfirmTemplateOverwrite.value = false
+  editSaveTemplateOpen.value = true
+}
+
+function buildEditTemplateReq() {
+  const req: Parameters<typeof createTemplate>[0] = { name: editTemplateName.value, description: editTemplateDescription.value }
+  if (editBindingType.value === 'cluster') {
+    if (editAdvanced.value) {
+      req.customRole = true
+      req.rules = editRules.value.map(draftToRule)
+    } else {
+      req.clusterRole = editForm.clusterRole
+    }
+  } else if (editBindingType.value === 'namespace') {
+    req.namespaceBindings = editNsBindings.value.map(nb => ({
+      namespace: nb.namespace,
+      ...(nb.advanced ? { customRole: true, rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+    }))
+  }
+  return req
+}
+
+async function doEditSaveTemplate(overwrite = false) {
+  editSavingTemplate.value = true
+  editSaveTemplateError.value = ''
+  try {
+    const saved = await createTemplate(buildEditTemplateReq(), overwrite)
+    const idx = allTemplates.value.findIndex(t => t.name === saved.name)
+    if (idx >= 0) allTemplates.value[idx] = saved
+    else allTemplates.value.push(saved)
+    editSaveTemplateOpen.value = false
+    editConfirmTemplateOverwrite.value = false
+  } catch (e: any) {
+    if (e.response?.status === 409) {
+      editConfirmTemplateOverwrite.value = true
+    } else {
+      editSaveTemplateError.value = e.response?.data?.error ?? 'Failed to save template'
+    }
+  } finally {
+    editSavingTemplate.value = false
+  }
+}
 
 function openEdit(u: User) {
   editTarget.value         = u
@@ -858,6 +990,7 @@ function downloadRenewKubeconfig() {
 onMounted(async () => {
   await load()
   try { allGroups.value = await listGroups() } catch {}
+  try { allTemplates.value = await listTemplates() } catch {}
 })
 </script>
 
