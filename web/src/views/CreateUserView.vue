@@ -328,12 +328,12 @@ function toggleVerb(rule: RuleDraft, verb: string) {
   if (idx === -1) rule.verbs.push(verb)
   else rule.verbs.splice(idx, 1)
 }
-const groupDraft      = ref('')
-const groupInput      = ref<HTMLInputElement | null>(null)
-const loading         = ref(false)
-const error           = ref('')
-const result          = ref<CreateUserResponse | null>(null)
-const copied          = ref(false)
+const groupDraft       = ref('')
+const groupInput       = ref<HTMLInputElement | null>(null)
+const loading          = ref(false)
+const error            = ref('')
+const result           = ref<CreateUserResponse | null>(null)
+const copied           = ref(false)
 const confirmOverwrite = ref(false)
 let pendingPayload: CreateUserRequest | null = null
 const availableGroups = ref<Group[]>([])
@@ -388,23 +388,23 @@ function onBackspace() {
 }
 
 async function submit() {
-  addGroup() // flush any pending draft
+  addGroup()
   error.value = ''
   loading.value = true
-  try {
-    const payload: CreateUserRequest = { name: form.name, groups: form.groups }
-    if (bindingType.value === 'cluster') {
-      if (advanced.value) {
-        payload.rules = rules.value.map(draftToRule)
-      } else {
-        payload.clusterRole = form.clusterRole
-      }
-    } else if (bindingType.value === 'namespace') {
-      payload.namespaceBindings = nsBindings.value.map(nb => ({
-        namespace: nb.namespace,
-        ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
-      })) as NamespaceBinding[]
+  const payload: CreateUserRequest = { name: form.name, groups: form.groups }
+  if (bindingType.value === 'cluster') {
+    if (advanced.value) {
+      payload.rules = rules.value.map(draftToRule)
+    } else {
+      payload.clusterRole = form.clusterRole
     }
+  } else if (bindingType.value === 'namespace') {
+    payload.namespaceBindings = nsBindings.value.map(nb => ({
+      namespace: nb.namespace,
+      ...(nb.advanced ? { rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+    })) as NamespaceBinding[]
+  }
+  try {
     result.value = await createUser(payload)
   } catch (e: any) {
     if (e.response?.status === 409) {
