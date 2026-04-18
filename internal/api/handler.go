@@ -101,21 +101,33 @@ func (h *Handler) clusterIDFromCtx(c *gin.Context) int64 {
 	return id
 }
 
-// clusterServer returns the API server URL for the given cluster.
-// Priority: clusters.api_server > app_settings (legacy) > env/config > in-cluster host.
+// clusterInfo returns apiServer and clusterName for a given cluster ID.
+// Falls back to app_settings (legacy), then env/config, then in-cluster host.
+func (h *Handler) clusterInfo(ctx context.Context, clusterID int64) (apiServer, clusterName string) {
+	_ = h.db.QueryRow(ctx,
+		"SELECT api_server, cluster_name FROM clusters WHERE id=$1", clusterID,
+	).Scan(&apiServer, &clusterName)
+
+	if apiServer == "" {
+		// Legacy single-cluster setting
+		_ = h.db.QueryRow(ctx, "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&apiServer)
+	}
+	if apiServer == "" {
+		apiServer = h.cfg.ClusterServer
+	}
+	if apiServer == "" {
+		if c, err := h.mgr.Get(ctx, h.mgr.DefaultID()); err == nil {
+			apiServer = c.RestConfig.Host
+		}
+	}
+	if clusterName == "" {
+		clusterName = h.cfg.ClusterName
+	}
+	return
+}
+
+// clusterServer returns the API server URL for the default cluster (legacy compat).
 func (h *Handler) clusterServer(ctx context.Context) string {
-	// Legacy single-cluster setting
-	var val string
-	_ = h.db.QueryRow(ctx, "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&val)
-	if val != "" {
-		return val
-	}
-	if h.cfg.ClusterServer != "" {
-		return h.cfg.ClusterServer
-	}
-	defaultClient, _ := h.mgr.Get(ctx, h.mgr.DefaultID())
-	if defaultClient != nil {
-		return defaultClient.RestConfig.Host
-	}
-	return ""
+	apiServer, _ := h.clusterInfo(ctx, h.mgr.DefaultID())
+	return apiServer
 }

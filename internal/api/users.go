@@ -24,6 +24,12 @@ import (
 
 func (h *Handler) CreateUser(c *gin.Context) {
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
 	var req models.CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
@@ -47,16 +53,14 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		}
 	}
 
-	// 1. Generate private key + CSR
 	kp, err := cert.Generate(req.Name, req.Groups)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	// 2. Submit CSR
 	annotations := buildAnnotations(req)
-	certPEM, err := h.k8s.SubmitAndApproveCSR(ctx, req.Name, kp.CSRPEM, annotations)
+	certPEM, err := k8sClient.SubmitAndApproveCSR(ctx, req.Name, kp.CSRPEM, annotations)
 	if err != nil {
 		if k8serrors.IsAlreadyExists(err) {
 			respondError(c, http.StatusConflict, fmt.Errorf("user %q already exists", req.Name))
@@ -66,8 +70,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 3. Store private key in k8s Secret
-	if err := h.k8s.StorePrivateKey(ctx, req.Name, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
+	if err := k8sClient.StorePrivateKey(ctx, req.Name, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
 		if k8serrors.IsAlreadyExists(err) {
 			respondError(c, http.StatusConflict, fmt.Errorf("user %q already exists", req.Name))
 			return
@@ -76,33 +79,31 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	// 4. Create RBAC bindings (all optional — user may belong to groups only)
 	if req.ClusterRole != "" {
-		err = h.k8s.CreateClusterRoleBinding(ctx, req.Name, req.ClusterRole)
+		err = k8sClient.CreateClusterRoleBinding(ctx, req.Name, req.ClusterRole)
 	} else if clusterCustom {
-		err = h.k8s.CreateCustomClusterRole(ctx, req.Name, req.Rules)
+		err = k8sClient.CreateCustomClusterRole(ctx, req.Name, req.Rules)
 	} else if len(req.NamespaceBindings) > 0 {
-		err = h.k8s.CreateNamespaceBindings(ctx, req.Name, req.NamespaceBindings)
+		err = k8sClient.CreateNamespaceBindings(ctx, req.Name, req.NamespaceBindings)
 	}
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	// 5. Persist to postgres (source of truth)
-	_ = h.upsertUserDB(ctx, req.Name, req.Groups, req.ClusterRole, clusterCustom,
+	_ = h.upsertUserDB(ctx, clusterID, req.Name, req.Groups, req.ClusterRole, clusterCustom,
 		req.Rules, req.NamespaceBindings, string(certPEM), string(kp.PrivateKeyPEM))
 
-	// 6. Build kubeconfig
-	caData, err := h.k8s.GetCAData()
+	caData, err := k8sClient.GetCAData()
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
+	apiServer, clusterName := h.clusterInfo(ctx, clusterID)
 	kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
 		Username:      req.Name,
-		ClusterName:   h.cfg.ClusterName,
-		ClusterServer: h.clusterServer(ctx),
+		ClusterName:   clusterName,
+		ClusterServer: apiServer,
 		ClusterCA:     caData,
 		ClientCert:    certPEM,
 		ClientKey:     kp.PrivateKeyPEM,
@@ -136,9 +137,13 @@ func (h *Handler) CreateUser(c *gin.Context) {
 
 func (h *Handler) ListUsers(c *gin.Context) {
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
-	// 1. Get all managed CSRs (one call — used for status + migration)
-	csrs, err := h.k8s.ListManagedCSRs(ctx)
+	csrs, err := k8sClient.ListManagedCSRs(ctx)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -148,11 +153,10 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		csrByName[csr.Labels[k8s.LabelUsername]] = csr
 	}
 
-	// 2. Read from postgres
 	rows, err := h.db.Query(ctx, `
 		SELECT name, groups, cluster_role, custom_role, rules, ns_bindings, cert_pem, created_at
-		FROM users ORDER BY name
-	`)
+		FROM users WHERE cluster_id=$1 ORDER BY name
+	`, clusterID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -183,7 +187,6 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		_ = json.Unmarshal(rulesJSON, &rules)
 		_ = json.Unmarshal(nsJSON, &nsBindings)
 
-		// Status: prefer CSR conditions, fall back to "Active" if cert in DB
 		status := "Active"
 		if csr, ok := csrByName[name]; ok {
 			status = csrStatusString(csr)
@@ -212,13 +215,12 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	}
 	rows.Close()
 
-	// 3. Migration: for any CSR-managed users not yet in postgres, import them
 	for _, csr := range csrs {
 		username := csr.Labels[k8s.LabelUsername]
 		if dbNames[username] {
 			continue
 		}
-		if u := h.importCSRUser(ctx, csr); u != nil {
+		if u := h.importCSRUser(ctx, clusterID, k8sClient, csr); u != nil {
 			users = append(users, *u)
 		}
 	}
@@ -235,9 +237,13 @@ func (h *Handler) ListUsers(c *gin.Context) {
 func (h *Handler) DeleteUser(c *gin.Context) {
 	username := c.Param("name")
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
-	// Determine RBAC type from DB first, fall back to CSR
-	isClusterCustom, hasNsBindings := h.userRBACType(ctx, username)
+	isClusterCustom, hasNsBindings := h.userRBACType(ctx, clusterID, username)
 
 	var errs []string
 	collect := func(e error) {
@@ -245,15 +251,15 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 			errs = append(errs, e.Error())
 		}
 	}
-	collect(h.k8s.DeleteCSR(ctx, username))
-	collect(h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace))
-	collect(h.k8s.DeleteClusterRoleBinding(ctx, username))
+	collect(k8sClient.DeleteCSR(ctx, username))
+	collect(k8sClient.DeletePrivateKey(ctx, username, h.cfg.Namespace))
+	collect(k8sClient.DeleteClusterRoleBinding(ctx, username))
 	if isClusterCustom {
-		collect(h.k8s.DeleteCustomClusterRole(ctx, username))
+		collect(k8sClient.DeleteCustomClusterRole(ctx, username))
 	}
 	_ = hasNsBindings
-	collect(h.k8s.DeleteAllNamespaceBindings(ctx, username))
-	_, _ = h.db.Exec(ctx, "DELETE FROM users WHERE name=$1", username)
+	collect(k8sClient.DeleteAllNamespaceBindings(ctx, username))
+	_, _ = h.db.Exec(ctx, "DELETE FROM users WHERE name=$1 AND cluster_id=$2", username, clusterID)
 
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
@@ -267,6 +273,11 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 	username := c.Param("name")
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
 	var req models.UpdateRBACRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -288,34 +299,30 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		}
 	}
 
-	// Get old state (prefer DB, fall back to CSR)
-	oldGroups, oldClusterCustom := h.getUserOldState(ctx, username)
+	oldGroups, oldClusterCustom := h.getUserOldState(ctx, clusterID, username, k8sClient)
 
-	// Delete old k8s bindings
 	var errs []string
 	collect := func(e error) {
 		if e != nil {
 			errs = append(errs, e.Error())
 		}
 	}
-	collect(h.k8s.DeleteClusterRoleBinding(ctx, username))
+	collect(k8sClient.DeleteClusterRoleBinding(ctx, username))
 	if oldClusterCustom {
-		collect(h.k8s.DeleteCustomClusterRole(ctx, username))
+		collect(k8sClient.DeleteCustomClusterRole(ctx, username))
 	}
-	collect(h.k8s.DeleteAllNamespaceBindings(ctx, username))
+	collect(k8sClient.DeleteAllNamespaceBindings(ctx, username))
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 
-	// Create new k8s bindings
-	var err error
 	if req.ClusterRole != "" {
-		err = h.k8s.CreateClusterRoleBinding(ctx, username, req.ClusterRole)
+		err = k8sClient.CreateClusterRoleBinding(ctx, username, req.ClusterRole)
 	} else if clusterCustom {
-		err = h.k8s.CreateCustomClusterRole(ctx, username, req.Rules)
+		err = k8sClient.CreateCustomClusterRole(ctx, username, req.Rules)
 	} else {
-		err = h.k8s.CreateNamespaceBindings(ctx, username, req.NamespaceBindings)
+		err = k8sClient.CreateNamespaceBindings(ctx, username, req.NamespaceBindings)
 	}
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -324,7 +331,6 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 
 	newGroups := req.Groups
 
-	// If groups changed → regenerate cert
 	if groupsChanged(oldGroups, newGroups) {
 		kp, err := cert.Generate(username, newGroups)
 		if err != nil {
@@ -332,38 +338,38 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 			return
 		}
 
-		if err := h.k8s.DeleteCSR(ctx, username); err != nil {
+		if err := k8sClient.DeleteCSR(ctx, username); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
 		time.Sleep(300 * time.Millisecond)
 
 		newAnn := buildAnnotationsFromFields(newGroups, req.ClusterRole, clusterCustom, nsScoped, req.NamespaceBindings)
-		certPEM, err := h.k8s.SubmitAndApproveCSR(ctx, username, kp.CSRPEM, newAnn)
+		certPEM, err := k8sClient.SubmitAndApproveCSR(ctx, username, kp.CSRPEM, newAnn)
 		if err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
 
-		_ = h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace)
-		if err := h.k8s.StorePrivateKey(ctx, username, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
+		_ = k8sClient.DeletePrivateKey(ctx, username, h.cfg.Namespace)
+		if err := k8sClient.StorePrivateKey(ctx, username, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
 
-		// Update postgres with new cert + RBAC
-		_ = h.upsertUserDB(ctx, username, newGroups, req.ClusterRole, clusterCustom,
+		_ = h.upsertUserDB(ctx, clusterID, username, newGroups, req.ClusterRole, clusterCustom,
 			req.Rules, req.NamespaceBindings, string(certPEM), string(kp.PrivateKeyPEM))
 
-		caData, err := h.k8s.GetCAData()
+		caData, err := k8sClient.GetCAData()
 		if err != nil {
 			respondError(c, http.StatusInternalServerError, err)
 			return
 		}
+		apiServer, clusterName := h.clusterInfo(ctx, clusterID)
 		kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
 			Username:      username,
-			ClusterName:   h.cfg.ClusterName,
-			ClusterServer: h.clusterServer(ctx),
+			ClusterName:   clusterName,
+			ClusterServer: apiServer,
 			ClusterCA:     caData,
 			ClientCert:    certPEM,
 			ClientKey:     kp.PrivateKeyPEM,
@@ -377,14 +383,11 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 		return
 	}
 
-	// Groups unchanged — update CSR annotations + postgres (no new cert)
 	newAnn := buildAnnotationsFromFields(newGroups, req.ClusterRole, clusterCustom, nsScoped, req.NamespaceBindings)
-	if err := h.k8s.UpdateCSRAnnotations(ctx, username, newAnn); err != nil {
-		// CSR may not exist (was cleaned up) — not fatal since DB is source of truth
+	if err := k8sClient.UpdateCSRAnnotations(ctx, username, newAnn); err != nil {
 		_ = err
 	}
-	// Update RBAC fields in postgres; keep existing cert_pem / private_key_pem
-	_ = h.upsertUserDB(ctx, username, newGroups, req.ClusterRole, clusterCustom,
+	_ = h.upsertUserDB(ctx, clusterID, username, newGroups, req.ClusterRole, clusterCustom,
 		req.Rules, req.NamespaceBindings, "", "")
 
 	c.JSON(http.StatusOK, models.UpdateRBACResponse{})
@@ -395,29 +398,32 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 func (h *Handler) DownloadKubeconfig(c *gin.Context) {
 	username := c.Param("name")
 	ctx := c.Request.Context()
-
-	caData, err := h.k8s.GetCAData()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	// Try postgres first (preferred path)
+	caData, err := k8sClient.GetCAData()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	apiServer, clusterName := h.clusterInfo(ctx, clusterID)
+
 	var certPEM, privateKeyPEM string
 	dbErr := h.db.QueryRow(ctx,
-		"SELECT cert_pem, private_key_pem FROM users WHERE name=$1", username).
-		Scan(&certPEM, &privateKeyPEM)
+		"SELECT cert_pem, private_key_pem FROM users WHERE name=$1 AND cluster_id=$2",
+		username, clusterID).Scan(&certPEM, &privateKeyPEM)
 
 	if dbErr == nil && certPEM != "" && privateKeyPEM != "" {
-		// If Secret is missing, recreate it silently
-		if _, serr := h.k8s.GetPrivateKey(ctx, username, h.cfg.Namespace); serr != nil {
-			_ = h.k8s.StorePrivateKey(ctx, username, h.cfg.Namespace, []byte(privateKeyPEM))
+		if _, serr := k8sClient.GetPrivateKey(ctx, username, h.cfg.Namespace); serr != nil {
+			_ = k8sClient.StorePrivateKey(ctx, username, h.cfg.Namespace, []byte(privateKeyPEM))
 		}
-
 		kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
 			Username:      username,
-			ClusterName:   h.cfg.ClusterName,
-			ClusterServer: h.clusterServer(ctx),
+			ClusterName:   clusterName,
+			ClusterServer: apiServer,
 			ClusterCA:     caData,
 			ClientCert:    []byte(certPEM),
 			ClientKey:     []byte(privateKeyPEM),
@@ -431,8 +437,7 @@ func (h *Handler) DownloadKubeconfig(c *gin.Context) {
 		return
 	}
 
-	// Fallback: read from CSR + Secret (pre-DB users)
-	csr, err := h.k8s.GetCSR(ctx, username)
+	csr, err := k8sClient.GetCSR(ctx, username)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			respondError(c, http.StatusNotFound, fmt.Errorf("user %q not found", username))
@@ -445,7 +450,7 @@ func (h *Handler) DownloadKubeconfig(c *gin.Context) {
 		respondError(c, http.StatusConflict, fmt.Errorf("certificate for user %q is not ready", username))
 		return
 	}
-	privateKey, err := h.k8s.GetPrivateKey(ctx, username, h.cfg.Namespace)
+	privateKey, err := k8sClient.GetPrivateKey(ctx, username, h.cfg.Namespace)
 	if err != nil {
 		if k8serrors.IsNotFound(err) {
 			respondError(c, http.StatusNotFound, fmt.Errorf("private key for user %q is not available", username))
@@ -456,8 +461,8 @@ func (h *Handler) DownloadKubeconfig(c *gin.Context) {
 	}
 	kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
 		Username:      username,
-		ClusterName:   h.cfg.ClusterName,
-		ClusterServer: h.clusterServer(ctx),
+		ClusterName:   clusterName,
+		ClusterServer: apiServer,
 		ClusterCA:     caData,
 		ClientCert:    csr.Status.Certificate,
 		ClientKey:     privateKey,
@@ -470,11 +475,16 @@ func (h *Handler) DownloadKubeconfig(c *gin.Context) {
 	c.Data(http.StatusOK, "application/x-yaml", kubeconfigYAML)
 }
 
-// ── Sync (repair missing k8s objects from DB) ─────────────────────────────────
+// ── Sync ──────────────────────────────────────────────────────────────────────
 
 func (h *Handler) SyncUser(c *gin.Context) {
 	username := c.Param("name")
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
 	var (
 		groups        []string
@@ -484,10 +494,10 @@ func (h *Handler) SyncUser(c *gin.Context) {
 		nsJSON        []byte
 		privateKeyPEM string
 	)
-	err := h.db.QueryRow(ctx, `
+	err = h.db.QueryRow(ctx, `
 		SELECT groups, cluster_role, custom_role, rules, ns_bindings, private_key_pem
-		FROM users WHERE name=$1
-	`, username).Scan(&groups, &clusterRole, &customRole, &rulesJSON, &nsJSON, &privateKeyPEM)
+		FROM users WHERE name=$1 AND cluster_id=$2
+	`, username, clusterID).Scan(&groups, &clusterRole, &customRole, &rulesJSON, &nsJSON, &privateKeyPEM)
 	if err != nil {
 		respondError(c, http.StatusNotFound, fmt.Errorf("user %q not found in database", username))
 		return
@@ -500,10 +510,9 @@ func (h *Handler) SyncUser(c *gin.Context) {
 
 	repaired := []string{}
 
-	// Ensure Secret (private key) exists
 	if privateKeyPEM != "" {
-		if _, serr := h.k8s.GetPrivateKey(ctx, username, h.cfg.Namespace); serr != nil {
-			if err := h.k8s.StorePrivateKey(ctx, username, h.cfg.Namespace, []byte(privateKeyPEM)); err != nil {
+		if _, serr := k8sClient.GetPrivateKey(ctx, username, h.cfg.Namespace); serr != nil {
+			if err := k8sClient.StorePrivateKey(ctx, username, h.cfg.Namespace, []byte(privateKeyPEM)); err != nil {
 				respondError(c, http.StatusInternalServerError, fmt.Errorf("recreate secret: %w", err))
 				return
 			}
@@ -511,20 +520,19 @@ func (h *Handler) SyncUser(c *gin.Context) {
 		}
 	}
 
-	// Recreate RBAC: delete all then recreate from DB (repair operation, brief gap is acceptable)
-	_ = h.k8s.DeleteClusterRoleBinding(ctx, username)
+	_ = k8sClient.DeleteClusterRoleBinding(ctx, username)
 	if customRole && len(nsBindings) == 0 {
-		_ = h.k8s.DeleteCustomClusterRole(ctx, username)
+		_ = k8sClient.DeleteCustomClusterRole(ctx, username)
 	}
-	_ = h.k8s.DeleteAllNamespaceBindings(ctx, username)
+	_ = k8sClient.DeleteAllNamespaceBindings(ctx, username)
 
 	var rbacErr error
 	if clusterRole != "" {
-		rbacErr = h.k8s.CreateClusterRoleBinding(ctx, username, clusterRole)
+		rbacErr = k8sClient.CreateClusterRoleBinding(ctx, username, clusterRole)
 	} else if customRole && len(nsBindings) == 0 {
-		rbacErr = h.k8s.CreateCustomClusterRole(ctx, username, rules)
+		rbacErr = k8sClient.CreateCustomClusterRole(ctx, username, rules)
 	} else if len(nsBindings) > 0 {
-		rbacErr = h.k8s.CreateNamespaceBindings(ctx, username, nsBindings)
+		rbacErr = k8sClient.CreateNamespaceBindings(ctx, username, nsBindings)
 	}
 	if rbacErr != nil {
 		respondError(c, http.StatusInternalServerError, fmt.Errorf("recreate rbac: %w", rbacErr))
@@ -535,11 +543,95 @@ func (h *Handler) SyncUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"repaired": repaired})
 }
 
+// ── Renew certificate ─────────────────────────────────────────────────────────
+
+func (h *Handler) RenewCertificate(c *gin.Context) {
+	username := c.Param("name")
+	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	var (
+		groups      []string
+		clusterRole string
+		customRole  bool
+		rulesJSON   []byte
+		nsJSON      []byte
+	)
+	err = h.db.QueryRow(ctx, `
+		SELECT groups, cluster_role, custom_role, rules, ns_bindings
+		FROM users WHERE name=$1 AND cluster_id=$2
+	`, username, clusterID).Scan(&groups, &clusterRole, &customRole, &rulesJSON, &nsJSON)
+	if err != nil {
+		respondError(c, http.StatusNotFound, fmt.Errorf("user %q not found", username))
+		return
+	}
+
+	var rules []models.PolicyRule
+	var nsBindings []models.NamespaceBinding
+	_ = json.Unmarshal(rulesJSON, &rules)
+	_ = json.Unmarshal(nsJSON, &nsBindings)
+
+	kp, err := cert.Generate(username, groups)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	if err := k8sClient.DeleteCSR(ctx, username); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	ann := buildAnnotationsFromFields(groups, clusterRole, customRole, len(nsBindings) > 0, nsBindings)
+	certPEM, err := k8sClient.SubmitAndApproveCSR(ctx, username, kp.CSRPEM, ann)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	_ = k8sClient.DeletePrivateKey(ctx, username, h.cfg.Namespace)
+	if err := k8sClient.StorePrivateKey(ctx, username, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	_ = h.upsertUserDB(ctx, clusterID, username, groups, clusterRole, customRole, rules, nsBindings,
+		string(certPEM), string(kp.PrivateKeyPEM))
+
+	caData, err := k8sClient.GetCAData()
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+	apiServer, clusterName := h.clusterInfo(ctx, clusterID)
+	kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
+		Username:      username,
+		ClusterName:   clusterName,
+		ClusterServer: apiServer,
+		ClusterCA:     caData,
+		ClientCert:    certPEM,
+		ClientKey:     kp.PrivateKeyPEM,
+	})
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
+	expiresAt, _ := cert.ParseExpiry(certPEM)
+	c.JSON(http.StatusOK, models.RenewCertificateResponse{
+		Kubeconfig:    string(kubeconfigYAML),
+		CertExpiresAt: expiresAt,
+	})
+}
+
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-// upsertUserDB persists user state to postgres.
-// certPEM/privateKeyPEM are only updated when non-empty (to avoid overwriting on RBAC-only updates).
-func (h *Handler) upsertUserDB(ctx context.Context, name string, groups []string,
+func (h *Handler) upsertUserDB(ctx context.Context, clusterID int64, name string, groups []string,
 	clusterRole string, customRole bool, rules []models.PolicyRule,
 	nsBindings []models.NamespaceBinding, certPEM, privateKeyPEM string) error {
 
@@ -556,9 +648,9 @@ func (h *Handler) upsertUserDB(ctx context.Context, name string, groups []string
 	}
 
 	_, err := h.db.Exec(ctx, `
-		INSERT INTO users (name, groups, cluster_role, custom_role, rules, ns_bindings, cert_pem, private_key_pem)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-		ON CONFLICT (name) DO UPDATE SET
+		INSERT INTO users (cluster_id, name, groups, cluster_role, custom_role, rules, ns_bindings, cert_pem, private_key_pem)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+		ON CONFLICT (cluster_id, name) DO UPDATE SET
 			groups          = EXCLUDED.groups,
 			cluster_role    = EXCLUDED.cluster_role,
 			custom_role     = EXCLUDED.custom_role,
@@ -566,12 +658,13 @@ func (h *Handler) upsertUserDB(ctx context.Context, name string, groups []string
 			ns_bindings     = EXCLUDED.ns_bindings,
 			cert_pem        = CASE WHEN EXCLUDED.cert_pem        != '' THEN EXCLUDED.cert_pem        ELSE users.cert_pem        END,
 			private_key_pem = CASE WHEN EXCLUDED.private_key_pem != '' THEN EXCLUDED.private_key_pem ELSE users.private_key_pem END
-	`, name, groups, clusterRole, customRole, rulesJSON, nsJSON, certPEM, privateKeyPEM)
+	`, clusterID, name, groups, clusterRole, customRole, rulesJSON, nsJSON, certPEM, privateKeyPEM)
 	return err
 }
 
-// importCSRUser migrates a CSR-tracked user into postgres and returns it.
-func (h *Handler) importCSRUser(ctx context.Context, csr certificatesv1.CertificateSigningRequest) *models.User {
+func (h *Handler) importCSRUser(ctx context.Context, clusterID int64, k8sClient *k8s.Client,
+	csr certificatesv1.CertificateSigningRequest) *models.User {
+
 	username := csr.Labels[k8s.LabelUsername]
 	ann := csr.Annotations
 
@@ -598,21 +691,20 @@ func (h *Handler) importCSRUser(ctx context.Context, csr certificatesv1.Certific
 
 	clusterRole := ann[k8s.AnnotationClusterRole]
 
-	// Fetch custom role rules
 	var rules []models.PolicyRule
 	if isClusterCustom {
-		rules, _ = h.k8s.GetCustomRoleRules(ctx, username, "")
+		rules, _ = k8sClient.GetCustomRoleRules(ctx, username, "")
 	}
 	for i, nb := range nsBindings {
 		if nb.CustomRole {
-			nsBindings[i].Rules, _ = h.k8s.GetCustomRoleRules(ctx, username, nb.Namespace)
+			nsBindings[i].Rules, _ = k8sClient.GetCustomRoleRules(ctx, username, nb.Namespace)
 		}
 	}
 
 	certPEM := string(csr.Status.Certificate)
-	privateKey, _ := h.k8s.GetPrivateKey(ctx, username, h.cfg.Namespace)
+	privateKey, _ := k8sClient.GetPrivateKey(ctx, username, h.cfg.Namespace)
 
-	_ = h.upsertUserDB(ctx, username, groups, clusterRole, isClusterCustom,
+	_ = h.upsertUserDB(ctx, clusterID, username, groups, clusterRole, isClusterCustom,
 		rules, nsBindings, certPEM, string(privateKey))
 
 	var expiresAt *time.Time
@@ -635,17 +727,18 @@ func (h *Handler) importCSRUser(ctx context.Context, csr certificatesv1.Certific
 	}
 }
 
-// getUserOldState returns groups and customRole flag for a user, preferring DB over CSR.
-func (h *Handler) getUserOldState(ctx context.Context, username string) (groups []string, clusterCustom bool) {
+func (h *Handler) getUserOldState(ctx context.Context, clusterID int64, username string,
+	k8sClient *k8s.Client) (groups []string, clusterCustom bool) {
+
 	var customRole bool
 	var groupsArr []string
-	err := h.db.QueryRow(ctx, "SELECT groups, custom_role FROM users WHERE name=$1", username).
-		Scan(&groupsArr, &customRole)
+	err := h.db.QueryRow(ctx,
+		"SELECT groups, custom_role FROM users WHERE name=$1 AND cluster_id=$2",
+		username, clusterID).Scan(&groupsArr, &customRole)
 	if err == nil {
 		return groupsArr, customRole
 	}
-	// Fallback: read from CSR
-	csr, err := h.k8s.GetCSR(ctx, username)
+	csr, err := k8sClient.GetCSR(ctx, username)
 	if err != nil {
 		return nil, false
 	}
@@ -659,18 +752,17 @@ func (h *Handler) getUserOldState(ctx context.Context, username string) (groups 
 	return groups, clusterCustom
 }
 
-// userRBACType returns (isClusterCustom, hasNsBindings) for delete logic.
-func (h *Handler) userRBACType(ctx context.Context, username string) (isClusterCustom, hasNsBindings bool) {
+func (h *Handler) userRBACType(ctx context.Context, clusterID int64, username string) (isClusterCustom, hasNsBindings bool) {
 	var customRole bool
 	var nsJSON []byte
-	err := h.db.QueryRow(ctx, "SELECT custom_role, ns_bindings FROM users WHERE name=$1", username).
-		Scan(&customRole, &nsJSON)
+	err := h.db.QueryRow(ctx,
+		"SELECT custom_role, ns_bindings FROM users WHERE name=$1 AND cluster_id=$2",
+		username, clusterID).Scan(&customRole, &nsJSON)
 	if err == nil {
 		var nsBindings []models.NamespaceBinding
 		_ = json.Unmarshal(nsJSON, &nsBindings)
 		return customRole && len(nsBindings) == 0, len(nsBindings) > 0
 	}
-	// Fallback: CSR
 	csr, err := h.k8s.GetCSR(ctx, username)
 	if err != nil {
 		return false, false
@@ -761,86 +853,6 @@ func groupsChanged(old, new []string) bool {
 		}
 	}
 	return false
-}
-
-// ── Renew certificate ─────────────────────────────────────────────────────────
-
-func (h *Handler) RenewCertificate(c *gin.Context) {
-	username := c.Param("name")
-	ctx := c.Request.Context()
-
-	var (
-		groups      []string
-		clusterRole string
-		customRole  bool
-		rulesJSON   []byte
-		nsJSON      []byte
-	)
-	err := h.db.QueryRow(ctx, `
-		SELECT groups, cluster_role, custom_role, rules, ns_bindings
-		FROM users WHERE name=$1
-	`, username).Scan(&groups, &clusterRole, &customRole, &rulesJSON, &nsJSON)
-	if err != nil {
-		respondError(c, http.StatusNotFound, fmt.Errorf("user %q not found", username))
-		return
-	}
-
-	var rules []models.PolicyRule
-	var nsBindings []models.NamespaceBinding
-	_ = json.Unmarshal(rulesJSON, &rules)
-	_ = json.Unmarshal(nsJSON, &nsBindings)
-
-	kp, err := cert.Generate(username, groups)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	if err := h.k8s.DeleteCSR(ctx, username); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	time.Sleep(300 * time.Millisecond)
-
-	ann := buildAnnotationsFromFields(groups, clusterRole, customRole, len(nsBindings) > 0, nsBindings)
-	certPEM, err := h.k8s.SubmitAndApproveCSR(ctx, username, kp.CSRPEM, ann)
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	_ = h.k8s.DeletePrivateKey(ctx, username, h.cfg.Namespace)
-	if err := h.k8s.StorePrivateKey(ctx, username, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	_ = h.upsertUserDB(ctx, username, groups, clusterRole, customRole, rules, nsBindings,
-		string(certPEM), string(kp.PrivateKeyPEM))
-
-	caData, err := h.k8s.GetCAData()
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-	kubeconfigYAML, err := kubeconfig.Build(kubeconfig.BuildParams{
-		Username:      username,
-		ClusterName:   h.cfg.ClusterName,
-		ClusterServer: h.clusterServer(ctx),
-		ClusterCA:     caData,
-		ClientCert:    certPEM,
-		ClientKey:     kp.PrivateKeyPEM,
-	})
-	if err != nil {
-		respondError(c, http.StatusInternalServerError, err)
-		return
-	}
-
-	expiresAt, _ := cert.ParseExpiry(certPEM)
-	c.JSON(http.StatusOK, models.RenewCertificateResponse{
-		Kubeconfig:    string(kubeconfigYAML),
-		CertExpiresAt: expiresAt,
-	})
 }
 
 func csrStatusString(csr certificatesv1.CertificateSigningRequest) string {
