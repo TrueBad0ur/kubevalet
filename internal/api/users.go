@@ -68,6 +68,10 @@ func (h *Handler) CreateUser(c *gin.Context) {
 
 	// 3. Store private key in k8s Secret
 	if err := h.k8s.StorePrivateKey(ctx, req.Name, h.cfg.Namespace, kp.PrivateKeyPEM); err != nil {
+		if k8serrors.IsAlreadyExists(err) {
+			respondError(c, http.StatusConflict, fmt.Errorf("user %q already exists", req.Name))
+			return
+		}
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
