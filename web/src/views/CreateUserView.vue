@@ -61,6 +61,15 @@
               <p class="form-hint">Maps to O in the cert. Used in RBAC group bindings.</p>
             </div>
 
+            <!-- Template selector -->
+            <div v-if="availableTemplates.length" class="form-group">
+              <label class="form-label">Load template</label>
+              <select class="form-select" @change="applyTemplate(($event.target as HTMLSelectElement).value)">
+                <option value="">— select template —</option>
+                <option v-for="t in availableTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
+              </select>
+            </div>
+
             <!-- Binding type -->
             <div class="form-group">
               <label class="form-label">Access scope</label>
@@ -200,11 +209,39 @@
                 @click="nsBindings.push(emptyNsBinding())">+ Add namespace binding</button>
             </template>
 
-            <button type="submit" class="btn btn-primary" :disabled="loading">
-              <span v-if="loading" class="spinner" />
-              <span v-else>Create User</span>
-            </button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button type="submit" class="btn btn-primary" :disabled="loading">
+                <span v-if="loading" class="spinner" />
+                <span v-else>Create User</span>
+              </button>
+              <button type="button" class="btn btn-ghost" @click="openSaveTemplate">Save as template</button>
+            </div>
           </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save template modal -->
+    <div v-if="saveTemplateOpen" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">Save as template</div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Template name <span class="required">*</span></label>
+            <input v-model="templateName" type="text" class="form-input" placeholder="e.g. read-only-namespaced" pattern="[a-z0-9][a-z0-9\-]*" required />
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label class="form-label">Description</label>
+            <input v-model="templateDescription" type="text" class="form-input" placeholder="Optional description" />
+          </div>
+          <div v-if="saveTemplateError" class="alert alert-error" style="margin-top:12px">{{ saveTemplateError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" @click="saveTemplateOpen = false">Cancel</button>
+          <button class="btn btn-primary" :disabled="savingTemplate || !templateName" @click="doSaveTemplate">
+            <span v-if="savingTemplate" class="spinner" />
+            <span v-else>Save</span>
+          </button>
         </div>
       </div>
     </div>
@@ -261,6 +298,7 @@ import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { createUser, deleteUser, type CreateUserRequest, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
+import { listTemplates, createTemplate, type RoleTemplate } from '@/api/templates'
 
 
 
@@ -336,6 +374,13 @@ const result           = ref<CreateUserResponse | null>(null)
 const copied           = ref(false)
 const confirmOverwrite = ref(false)
 let pendingPayload: CreateUserRequest | null = null
+
+const availableTemplates  = ref<RoleTemplate[]>([])
+const saveTemplateOpen    = ref(false)
+const templateName        = ref('')
+const templateDescription = ref('')
+const savingTemplate      = ref(false)
+const saveTemplateError   = ref('')
 const availableGroups = ref<Group[]>([])
 const dropdownActive   = ref(-1)
 const groupFocused     = ref(false)
@@ -351,6 +396,7 @@ const groupSuggestions = computed(() => {
 
 onMounted(async () => {
   try { availableGroups.value = await listGroups() } catch { /* ignore */ }
+  try { availableTemplates.value = await listTemplates() } catch { /* ignore */ }
 })
 
 function focusGroupInput() { groupInput.value?.focus() }
@@ -385,6 +431,76 @@ function removeGroup(g: string) {
 
 function onBackspace() {
   if (!groupDraft.value && form.groups.length) form.groups.pop()
+}
+
+function applyTemplate(idStr: string) {
+  const t = availableTemplates.value.find(t => String(t.id) === idStr)
+  if (!t) return
+  if (t.namespaceBindings?.length) {
+    bindingType.value = 'namespace'
+    nsBindings.value = t.namespaceBindings.map(nb => ({
+      namespace: nb.namespace,
+      role: nb.role ?? '',
+      advanced: !!nb.customRole,
+      rules: nb.rules?.length ? nb.rules.map(r => ({
+        apiGroups: r.apiGroups?.join(', ') ?? '',
+        resources: r.resources?.join(', ') ?? '',
+        verbs: r.verbs ?? [],
+        verbCustom: '',
+      })) : [emptyRule()],
+    }))
+  } else if (t.customRole && t.rules?.length) {
+    bindingType.value = 'cluster'
+    advanced.value = true
+    form.clusterRole = ''
+    rules.value = t.rules.map(r => ({
+      apiGroups: r.apiGroups?.join(', ') ?? '',
+      resources: r.resources?.join(', ') ?? '',
+      verbs: r.verbs ?? [],
+      verbCustom: '',
+    }))
+  } else if (t.clusterRole) {
+    bindingType.value = 'cluster'
+    advanced.value = false
+    form.clusterRole = t.clusterRole
+  } else {
+    bindingType.value = 'none'
+  }
+}
+
+function openSaveTemplate() {
+  templateName.value = ''
+  templateDescription.value = ''
+  saveTemplateError.value = ''
+  saveTemplateOpen.value = true
+}
+
+async function doSaveTemplate() {
+  savingTemplate.value = true
+  saveTemplateError.value = ''
+  try {
+    const req: Parameters<typeof createTemplate>[0] = { name: templateName.value, description: templateDescription.value }
+    if (bindingType.value === 'cluster') {
+      if (advanced.value) {
+        req.customRole = true
+        req.rules = rules.value.map(draftToRule)
+      } else {
+        req.clusterRole = form.clusterRole
+      }
+    } else if (bindingType.value === 'namespace') {
+      req.namespaceBindings = nsBindings.value.map(nb => ({
+        namespace: nb.namespace,
+        ...(nb.advanced ? { customRole: true, rules: nb.rules.map(draftToRule) } : { role: nb.role }),
+      }))
+    }
+    const saved = await createTemplate(req)
+    availableTemplates.value.push(saved)
+    saveTemplateOpen.value = false
+  } catch (e: any) {
+    saveTemplateError.value = e.response?.data?.error ?? 'Failed to save template'
+  } finally {
+    savingTemplate.value = false
+  }
 }
 
 async function submit() {

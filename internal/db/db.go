@@ -84,6 +84,22 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 
 	_, err = pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS role_templates (
+			id           BIGSERIAL    PRIMARY KEY,
+			name         VARCHAR(255) UNIQUE NOT NULL,
+			description  TEXT         NOT NULL DEFAULT '',
+			cluster_role VARCHAR(255) NOT NULL DEFAULT '',
+			custom_role  BOOLEAN      NOT NULL DEFAULT FALSE,
+			rules        JSONB        NOT NULL DEFAULT '[]',
+			ns_bindings  JSONB        NOT NULL DEFAULT '[]',
+			created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("migrate role_templates: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS users (
 			id              BIGSERIAL    PRIMARY KEY,
 			name            VARCHAR(255) UNIQUE NOT NULL,

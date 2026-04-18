@@ -7,6 +7,7 @@ import IntegrationsView from '@/views/IntegrationsView.vue'
 import GroupsView       from '@/views/GroupsView.vue'
 import GraphView        from '@/views/GraphView.vue'
 import LocalUsersView   from '@/views/LocalUsersView.vue'
+import TemplatesView    from '@/views/TemplatesView.vue'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -35,6 +36,7 @@ const router = createRouter({
     { path: '/graph',        component: GraphView },
     { path: '/settings',     component: SettingsView },
     { path: '/local-users',  component: LocalUsersView,   meta: { adminOnly: true } },
+    { path: '/templates',    component: TemplatesView },
     { path: '/integrations', component: IntegrationsView },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
