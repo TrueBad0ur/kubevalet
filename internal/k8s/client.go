@@ -13,6 +13,19 @@ type Client struct {
 	RestConfig *rest.Config
 }
 
+// NewFromBytes creates a Kubernetes client from raw kubeconfig bytes.
+func NewFromBytes(kubeconfigBytes []byte) (*Client, error) {
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse kubeconfig: %w", err)
+	}
+	cs, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("create kubernetes client: %w", err)
+	}
+	return &Client{Kubernetes: cs, RestConfig: cfg}, nil
+}
+
 // New creates a Kubernetes client. Tries in-cluster config first,
 // falls back to kubeconfig file (path or KUBECONFIG env).
 func New(kubeconfigPath string) (*Client, error) {

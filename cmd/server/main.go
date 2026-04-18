@@ -83,7 +83,8 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	h := api.New(k8sClient, cfg, pool)
+	mgr := k8s.NewManager(defaultClusterID, k8sClient, pool)
+	h := api.New(mgr, cfg, pool)
 	v1 := r.Group("/api/v1")
 	h.RegisterPublic(v1)
 	h.RegisterProtected(v1)
