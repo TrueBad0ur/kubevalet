@@ -656,7 +656,7 @@ async function submitEdit() {
         }
         payload.clusterRole = editForm.clusterRole
       }
-    } else {
+    } else if (editBindingType.value === 'namespace') {
       for (const nb of editNsBindings.value) {
         if (!nb.namespace) { editError.value = 'Each namespace binding must have a namespace'; return }
         if (!nb.advanced && !nb.role) { editError.value = 'Each namespace binding must have a role'; return }
