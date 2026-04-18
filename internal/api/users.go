@@ -277,10 +277,6 @@ func (h *Handler) UpdateUserRBAC(c *gin.Context) {
 	clusterCustom := len(req.Rules) > 0
 	nsScoped := len(req.NamespaceBindings) > 0
 
-	if req.ClusterRole == "" && !clusterCustom && !nsScoped {
-		respondError(c, http.StatusBadRequest, fmt.Errorf("provide clusterRole, rules, or namespaceBindings"))
-		return
-	}
 	for _, nb := range req.NamespaceBindings {
 		if nb.Namespace == "" {
 			respondError(c, http.StatusBadRequest, fmt.Errorf("each namespaceBinding must have a namespace"))
