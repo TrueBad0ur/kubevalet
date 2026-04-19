@@ -11,8 +11,10 @@ import (
 )
 
 func (h *Handler) GetSettings(c *gin.Context) {
+	clusterID := h.clusterIDFromCtx(c)
 	var clusterServer string
-	_ = h.db.QueryRow(c.Request.Context(), "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&clusterServer)
+	_ = h.db.QueryRow(c.Request.Context(),
+		"SELECT api_server FROM clusters WHERE id=$1", clusterID).Scan(&clusterServer)
 	c.JSON(http.StatusOK, gin.H{
 		"version":           version.Version,
 		"clusterServer":     clusterServer,
@@ -31,10 +33,9 @@ func (h *Handler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
-	_, err := h.db.Exec(c.Request.Context(), `
-		INSERT INTO app_settings (key, value) VALUES ('cluster_server', $1)
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-	`, req.ClusterServer)
+	clusterID := h.clusterIDFromCtx(c)
+	_, err := h.db.Exec(c.Request.Context(),
+		"UPDATE clusters SET api_server=$1 WHERE id=$2", req.ClusterServer, clusterID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, fmt.Errorf("save setting: %w", err))
 		return

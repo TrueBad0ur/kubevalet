@@ -109,10 +109,6 @@ func (h *Handler) clusterInfo(ctx context.Context, clusterID int64) (apiServer, 
 	).Scan(&apiServer, &clusterName)
 
 	if apiServer == "" {
-		// Legacy single-cluster setting
-		_ = h.db.QueryRow(ctx, "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&apiServer)
-	}
-	if apiServer == "" {
 		apiServer = h.cfg.ClusterServer
 	}
 	if apiServer == "" {

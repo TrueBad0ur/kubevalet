@@ -71,12 +71,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { getSettings, updateSettings, changePassword } from '@/api/settings'
 import { useAuth } from '@/composables/useAuth'
+import { useCluster } from '@/composables/useCluster'
 
 const { isAdmin } = useAuth()
+const { currentID } = useCluster()
 
 const version        = ref('…')
 const clusterServer  = ref('')
@@ -90,22 +92,25 @@ const pwSuccess = ref('')
 
 const pwForm = reactive({ current: '', next: '', confirm: '' })
 
-onMounted(async () => {
+async function loadSettings() {
   try {
-    const s = await getSettings()
+    const s = await getSettings(currentID.value!)
     version.value       = s.version
     clusterServer.value = s.clusterServer ?? ''
   } catch {
     version.value = 'unknown'
   }
-})
+}
+
+onMounted(loadSettings)
+watch(currentID, loadSettings)
 
 async function submitCluster() {
   clusterError.value   = ''
   clusterSuccess.value = ''
   clusterSaving.value  = true
   try {
-    await updateSettings({ clusterServer: clusterServer.value })
+    await updateSettings({ clusterServer: clusterServer.value }, currentID.value!)
     clusterSuccess.value = 'Saved. New kubeconfigs will use this address.'
   } catch (e: any) {
     clusterError.value = e.response?.data?.error ?? 'Failed to save'
