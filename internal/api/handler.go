@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,13 +12,13 @@ import (
 )
 
 type Handler struct {
-	k8s *k8s.Client
+	mgr *k8s.Manager
 	cfg *config.Config
 	db  *pgxpool.Pool
 }
 
-func New(k8sClient *k8s.Client, cfg *config.Config, db *pgxpool.Pool) *Handler {
-	return &Handler{k8s: k8sClient, cfg: cfg, db: db}
+func New(mgr *k8s.Manager, cfg *config.Config, db *pgxpool.Pool) *Handler {
+	return &Handler{mgr: mgr, cfg: cfg, db: db}
 }
 
 // RegisterPublic registers routes that do not require authentication.
@@ -36,6 +37,7 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	protected.GET("/groups", h.ListGroups)
 	protected.GET("/settings", h.GetSettings)
 	protected.PUT("/settings/password", h.ChangePassword)
+	protected.GET("/clusters", h.ListClusters)
 
 	// Admin-only routes
 	admin := protected.Group("")
@@ -59,6 +61,9 @@ func (h *Handler) RegisterProtected(rg *gin.RouterGroup) {
 	admin.PUT("/local-users/:username/password", h.ResetLocalUserPassword)
 	admin.PUT("/local-users/:username/role", h.UpdateLocalUserRole)
 
+	admin.POST("/clusters", h.CreateCluster)
+	admin.DELETE("/clusters/:id", h.DeleteCluster)
+
 	protected.GET("/templates", h.ListTemplates)
 	admin.POST("/templates", h.CreateTemplate)
 	admin.DELETE("/templates/:id", h.DeleteTemplate)
@@ -72,17 +77,45 @@ func respondError(c *gin.Context, status int, err error) {
 	c.JSON(status, errorResponse{Error: err.Error()})
 }
 
-// clusterServer returns the API server address for kubeconfig generation.
-// Priority: DB setting > env/config > in-cluster rest host.
-func (h *Handler) clusterServer(ctx context.Context) string {
-	var val string
-	_ = h.db.QueryRow(ctx, "SELECT value FROM app_settings WHERE key='cluster_server'").Scan(&val)
-	if val != "" {
-		return val
+// k8sForCluster returns the k8s client for the cluster ID in the request context.
+func (h *Handler) k8sForCluster(c *gin.Context) (*k8s.Client, int64, error) {
+	clusterID := h.clusterIDFromCtx(c)
+	client, err := h.mgr.Get(c.Request.Context(), clusterID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get k8s client: %w", err)
 	}
-	if h.cfg.ClusterServer != "" {
-		return h.cfg.ClusterServer
-	}
-	return h.k8s.RestConfig.Host
+	return client, clusterID, nil
 }
 
+// clusterIDFromCtx reads cluster_id from query param, defaulting to the primary cluster.
+func (h *Handler) clusterIDFromCtx(c *gin.Context) int64 {
+	var id int64
+	if v := c.Query("cluster_id"); v != "" {
+		fmt.Sscan(v, &id)
+	}
+	if id <= 0 {
+		id = h.mgr.DefaultID()
+	}
+	return id
+}
+
+// clusterInfo returns apiServer and clusterName for the given cluster.
+// Falls back to env/config, then in-cluster REST host.
+func (h *Handler) clusterInfo(ctx context.Context, clusterID int64) (apiServer, clusterName string) {
+	_ = h.db.QueryRow(ctx,
+		"SELECT api_server, cluster_name FROM clusters WHERE id=$1", clusterID,
+	).Scan(&apiServer, &clusterName)
+
+	if apiServer == "" {
+		apiServer = h.cfg.ClusterServer
+	}
+	if apiServer == "" {
+		if c, err := h.mgr.Get(ctx, h.mgr.DefaultID()); err == nil {
+			apiServer = c.RestConfig.Host
+		}
+	}
+	if clusterName == "" {
+		clusterName = h.cfg.ClusterName
+	}
+	return
+}

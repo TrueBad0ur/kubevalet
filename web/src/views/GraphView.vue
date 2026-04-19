@@ -137,25 +137,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { listUsers, type User } from '@/api/users'
+import { useCluster } from '@/composables/useCluster'
 
 const users       = ref<User[]>([])
 const loading     = ref(true)
 const error       = ref('')
 const selected    = ref<User | null>(null)
 const filterGroup = ref('')
+const { currentID } = useCluster()
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  selected.value = null
   try {
-    users.value = await listUsers()
+    users.value = await listUsers(currentID.value!)
   } catch (e: any) {
     error.value = e.response?.data?.error ?? 'Failed to load users'
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
+watch(currentID, load)
 
 const allGroups = computed(() => {
   const s = new Set<string>()

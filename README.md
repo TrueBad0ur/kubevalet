@@ -22,8 +22,9 @@ Creates x509 users via the Kubernetes CSR API, issues kubeconfigs, and manages R
 - **Groups** — manage k8s Group subjects with their own RBAC; users added to a group via x509 O field inherit permissions automatically
 - Download / view generated kubeconfigs
 - **Graph view** — visualise any user's full access tree: cluster-wide role and per-namespace bindings
+- **Multi-cluster support** — manage users and groups across multiple Kubernetes clusters; switch between clusters via the sidebar; each cluster has its own isolated users/groups
 - **PostgreSQL as source of truth** — all user state (RBAC config, cert PEM, private key) stored in postgres; **Sync** button recreates any missing k8s objects from DB
-- Kubeconfig API server address configurable at runtime from the Settings UI (no redeploy needed)
+- Kubeconfig API server address configurable per cluster
 - Private keys stored in cluster Secrets and postgres — never logged or exposed raw
 - Simple username/password auth backed by PostgreSQL
 
@@ -230,6 +231,33 @@ make build
 ./bin/kubevalet
 ```
 
+## Multi-cluster
+
+kubevalet can manage users and groups across multiple Kubernetes clusters from a single UI.
+
+### How it works
+
+- The **default cluster** is the one where kubevalet itself runs (in-cluster service account). It is created automatically on startup.
+- **Additional clusters** are added via the Clusters page (admin only) by pasting a kubeconfig with cluster-admin permissions.
+- Users and groups are **isolated per cluster** — switching clusters in the sidebar reloads all views for that cluster.
+- Kubeconfigs generated for users embed the `api_server` URL configured for each cluster (set at add time, editable in Settings).
+
+> **Security note:** Kubeconfigs for external clusters are stored as plaintext in PostgreSQL. Encrypt the database at rest before using in production.
+
+### Adding a cluster
+
+1. Go to **Clusters** in the sidebar.
+2. Click **+ Add Cluster**.
+3. Fill in:
+   - **Name** — identifier (DNS label format, e.g. `prod-eu`)
+   - **API Server** — external URL that will be embedded in generated kubeconfigs (e.g. `https://api.prod.example.com:6443`)
+   - **Kubeconfig** — paste a kubeconfig with cluster-admin access to the target cluster
+4. After adding, select the cluster from the sidebar dropdown to start managing its users and groups.
+
+### Switching clusters
+
+The sidebar shows a cluster dropdown when more than one cluster is configured. Selecting a cluster reloads Users, Groups, Graph, and Settings for that cluster. Templates are global across all clusters.
+
 ## Custom RBAC rules — API groups
 
 Each rule covers exactly one API group. Resources from different groups must be split into separate rules:
@@ -255,6 +283,8 @@ Rule 2 — API Groups: apps      Resources: deployments
 
 ## Known limitations
 
+- **Cluster kubeconfigs stored in plaintext.** Multi-cluster support stores kubeconfigs (including credentials) in PostgreSQL without encryption. Anyone with read access to the database can extract cluster credentials. Encrypt the database at rest (e.g. via LUKS, cloud provider encryption, or pgcrypto) before using this in production. Application-level encryption may be added in a future release.
+
 - **JWT role changes take effect only after token expiry.** When an admin demotes another admin to viewer (or changes any role), the existing JWT is not invalidated — the affected user retains their previous role until their token expires (default TTL: 24 h). To force immediate effect, the user must log out and log in again. This is an inherent trade-off of stateless JWT auth; adding server-side token blacklisting would require a shared revocation store.
 
 ## Roadmap
@@ -262,7 +292,7 @@ Rule 2 — API Groups: apps      Resources: deployments
 - [x] Screenshots in README
 - [x] RBAC for local users (is_admin flag → admin can manage all users/passwords, regular users can only change own password)
 - [ ] Keycloak / OIDC integration
-- [ ] Multi-cluster support
+- [x] Multi-cluster support
 - [ ] Audit log (who created/deleted which user and when)
 - [x] User expiry / certificate rotation reminders
 - [x] Role templates (save and reuse custom RBAC configs)

@@ -305,9 +305,12 @@ import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { createUser, deleteUser, type CreateUserRequest, type CreateUserResponse, type PolicyRule, type NamespaceBinding } from '@/api/users'
 import { listGroups, type Group } from '@/api/groups'
+import { useCluster } from '@/composables/useCluster'
 import { listTemplates, createTemplate, type RoleTemplate } from '@/api/templates'
 
 
+
+const { currentID } = useCluster()
 
 const COMMON_VERBS = ['get', 'list', 'watch', 'create', 'update', 'patch', 'delete']
 
@@ -403,7 +406,7 @@ const groupSuggestions = computed(() => {
 })
 
 onMounted(async () => {
-  try { availableGroups.value = await listGroups() } catch { /* ignore */ }
+  try { availableGroups.value = await listGroups(currentID.value!) } catch { /* ignore */ }
   try { availableTemplates.value = await listTemplates() } catch { /* ignore */ }
 })
 
@@ -541,7 +544,7 @@ async function submit() {
     })) as NamespaceBinding[]
   }
   try {
-    result.value = await createUser(payload)
+    result.value = await createUser(payload, currentID.value!)
   } catch (e: any) {
     if (e.response?.status === 409) {
       pendingPayload = payload
@@ -560,8 +563,8 @@ async function overwriteUser() {
   error.value = ''
   loading.value = true
   try {
-    await deleteUser(pendingPayload.name)
-    result.value = await createUser(pendingPayload)
+    await deleteUser(pendingPayload.name, currentID.value!)
+    result.value = await createUser(pendingPayload, currentID.value!)
   } catch (e: any) {
     error.value = e.response?.data?.error ?? 'Failed to overwrite user'
   } finally {

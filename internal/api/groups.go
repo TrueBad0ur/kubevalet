@@ -26,10 +26,16 @@ func validateName(name string) error {
 }
 
 func (h *Handler) ListGroups(c *gin.Context) {
+	_, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
 	rows, err := h.db.Query(c.Request.Context(), `
 		SELECT id, name, description, cluster_role, custom_role, rules, ns_bindings, created_at
-		FROM groups ORDER BY name
-	`)
+		FROM groups WHERE cluster_id=$1 ORDER BY name
+	`, clusterID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -52,6 +58,12 @@ func (h *Handler) ListGroups(c *gin.Context) {
 }
 
 func (h *Handler) CreateGroup(c *gin.Context) {
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
+
 	var req models.CreateGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		respondError(c, http.StatusBadRequest, err)
@@ -80,10 +92,10 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 
 	var id int64
 	var createdAt time.Time
-	err := h.db.QueryRow(c.Request.Context(), `
-		INSERT INTO groups (name, description, cluster_role, custom_role, rules, ns_bindings)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at
-	`, req.Name, req.Description, req.ClusterRole, clusterCustom, rulesJSON, nsJSON).Scan(&id, &createdAt)
+	err = h.db.QueryRow(c.Request.Context(), `
+		INSERT INTO groups (cluster_id, name, description, cluster_role, custom_role, rules, ns_bindings)
+		VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at
+	`, clusterID, req.Name, req.Description, req.ClusterRole, clusterCustom, rulesJSON, nsJSON).Scan(&id, &createdAt)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -94,23 +106,21 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	// Create k8s bindings if RBAC was specified
 	ctx := c.Request.Context()
 	if req.ClusterRole != "" {
-		err = h.k8s.CreateGroupClusterRoleBinding(ctx, req.Name, req.ClusterRole)
+		err = k8sClient.CreateGroupClusterRoleBinding(ctx, req.Name, req.ClusterRole)
 	} else if clusterCustom {
-		err = h.k8s.CreateGroupCustomClusterRole(ctx, req.Name, req.Rules)
+		err = k8sClient.CreateGroupCustomClusterRole(ctx, req.Name, req.Rules)
 	} else if nsScoped {
-		err = h.k8s.CreateGroupNamespaceBindings(ctx, req.Name, req.NamespaceBindings)
+		err = k8sClient.CreateGroupNamespaceBindings(ctx, req.Name, req.NamespaceBindings)
 	}
 	if err != nil && !k8serrors.IsAlreadyExists(err) {
-		// Roll back DB insert
 		_, _ = h.db.Exec(c.Request.Context(), "DELETE FROM groups WHERE id=$1", id)
 		respondError(c, http.StatusInternalServerError, err)
 		return
 	}
 
-	g := models.Group{
+	c.JSON(http.StatusCreated, models.Group{
 		ID:                id,
 		Name:              req.Name,
 		Description:       req.Description,
@@ -119,13 +129,17 @@ func (h *Handler) CreateGroup(c *gin.Context) {
 		Rules:             req.Rules,
 		NamespaceBindings: req.NamespaceBindings,
 		CreatedAt:         createdAt,
-	}
-	c.JSON(http.StatusCreated, g)
+	})
 }
 
 func (h *Handler) UpdateGroup(c *gin.Context) {
 	groupName := c.Param("name")
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
 	var req models.UpdateGroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -137,11 +151,11 @@ func (h *Handler) UpdateGroup(c *gin.Context) {
 		return
 	}
 
-	// Check group exists
 	var oldCustomRole bool
 	var oldClusterRole string
-	err := h.db.QueryRow(ctx, "SELECT cluster_role, custom_role FROM groups WHERE name=$1", groupName).
-		Scan(&oldClusterRole, &oldCustomRole)
+	err = h.db.QueryRow(ctx,
+		"SELECT cluster_role, custom_role FROM groups WHERE name=$1 AND cluster_id=$2",
+		groupName, clusterID).Scan(&oldClusterRole, &oldCustomRole)
 	if err != nil {
 		respondError(c, http.StatusNotFound, fmt.Errorf("group %q not found", groupName))
 		return
@@ -150,30 +164,28 @@ func (h *Handler) UpdateGroup(c *gin.Context) {
 	clusterCustom := len(req.Rules) > 0
 	nsScoped := len(req.NamespaceBindings) > 0
 
-	// Delete old k8s bindings
 	var errs []string
 	collect := func(e error) {
 		if e != nil {
 			errs = append(errs, e.Error())
 		}
 	}
-	collect(h.k8s.DeleteGroupClusterRoleBinding(ctx, groupName))
+	collect(k8sClient.DeleteGroupClusterRoleBinding(ctx, groupName))
 	if oldCustomRole && oldClusterRole == "" {
-		collect(h.k8s.DeleteGroupCustomClusterRole(ctx, groupName))
+		collect(k8sClient.DeleteGroupCustomClusterRole(ctx, groupName))
 	}
-	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
+	collect(k8sClient.DeleteAllGroupNamespaceBindings(ctx, groupName))
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 
-	// Create new k8s bindings
 	if req.ClusterRole != "" {
-		err = h.k8s.CreateGroupClusterRoleBinding(ctx, groupName, req.ClusterRole)
+		err = k8sClient.CreateGroupClusterRoleBinding(ctx, groupName, req.ClusterRole)
 	} else if clusterCustom {
-		err = h.k8s.CreateGroupCustomClusterRole(ctx, groupName, req.Rules)
+		err = k8sClient.CreateGroupCustomClusterRole(ctx, groupName, req.Rules)
 	} else if nsScoped {
-		err = h.k8s.CreateGroupNamespaceBindings(ctx, groupName, req.NamespaceBindings)
+		err = k8sClient.CreateGroupNamespaceBindings(ctx, groupName, req.NamespaceBindings)
 	}
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
@@ -191,8 +203,8 @@ func (h *Handler) UpdateGroup(c *gin.Context) {
 
 	_, err = h.db.Exec(ctx, `
 		UPDATE groups SET description=$1, cluster_role=$2, custom_role=$3, rules=$4, ns_bindings=$5
-		WHERE name=$6
-	`, req.Description, req.ClusterRole, clusterCustom, rulesJSON, nsJSON, groupName)
+		WHERE name=$6 AND cluster_id=$7
+	`, req.Description, req.ClusterRole, clusterCustom, rulesJSON, nsJSON, groupName, clusterID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -204,11 +216,17 @@ func (h *Handler) UpdateGroup(c *gin.Context) {
 func (h *Handler) DeleteGroup(c *gin.Context) {
 	groupName := c.Param("name")
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
 	var customRole bool
 	var clusterRole string
-	err := h.db.QueryRow(ctx, "SELECT cluster_role, custom_role FROM groups WHERE name=$1", groupName).
-		Scan(&clusterRole, &customRole)
+	err = h.db.QueryRow(ctx,
+		"SELECT cluster_role, custom_role FROM groups WHERE name=$1 AND cluster_id=$2",
+		groupName, clusterID).Scan(&clusterRole, &customRole)
 	if err != nil {
 		respondError(c, http.StatusNotFound, fmt.Errorf("group %q not found", groupName))
 		return
@@ -220,18 +238,18 @@ func (h *Handler) DeleteGroup(c *gin.Context) {
 			errs = append(errs, e.Error())
 		}
 	}
-	collect(h.k8s.DeleteGroupClusterRoleBinding(ctx, groupName))
+	collect(k8sClient.DeleteGroupClusterRoleBinding(ctx, groupName))
 	if customRole && clusterRole == "" {
-		collect(h.k8s.DeleteGroupCustomClusterRole(ctx, groupName))
+		collect(k8sClient.DeleteGroupCustomClusterRole(ctx, groupName))
 	}
-	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
+	collect(k8sClient.DeleteAllGroupNamespaceBindings(ctx, groupName))
 
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
 	}
 
-	_, err = h.db.Exec(ctx, "DELETE FROM groups WHERE name=$1", groupName)
+	_, err = h.db.Exec(ctx, "DELETE FROM groups WHERE name=$1 AND cluster_id=$2", groupName, clusterID)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, err)
 		return
@@ -242,6 +260,11 @@ func (h *Handler) DeleteGroup(c *gin.Context) {
 func (h *Handler) SyncGroup(c *gin.Context) {
 	groupName := c.Param("name")
 	ctx := c.Request.Context()
+	k8sClient, clusterID, err := h.k8sForCluster(c)
+	if err != nil {
+		respondError(c, http.StatusInternalServerError, err)
+		return
+	}
 
 	var (
 		clusterRole string
@@ -249,9 +272,9 @@ func (h *Handler) SyncGroup(c *gin.Context) {
 		rulesJSON   []byte
 		nsJSON      []byte
 	)
-	err := h.db.QueryRow(ctx,
-		"SELECT cluster_role, custom_role, rules, ns_bindings FROM groups WHERE name=$1", groupName).
-		Scan(&clusterRole, &customRole, &rulesJSON, &nsJSON)
+	err = h.db.QueryRow(ctx,
+		"SELECT cluster_role, custom_role, rules, ns_bindings FROM groups WHERE name=$1 AND cluster_id=$2",
+		groupName, clusterID).Scan(&clusterRole, &customRole, &rulesJSON, &nsJSON)
 	if err != nil {
 		respondError(c, http.StatusNotFound, fmt.Errorf("group %q not found", groupName))
 		return
@@ -262,25 +285,23 @@ func (h *Handler) SyncGroup(c *gin.Context) {
 	_ = json.Unmarshal(rulesJSON, &rules)
 	_ = json.Unmarshal(nsJSON, &nsBindings)
 
-	// Nothing to sync if no RBAC is configured for this group
 	hasRBAC := clusterRole != "" || (customRole && len(nsBindings) == 0) || len(nsBindings) > 0
 	if !hasRBAC {
 		c.JSON(http.StatusOK, gin.H{"repaired": []string{}})
 		return
 	}
 
-	// Delete existing then recreate from DB
 	var errs []string
 	collect := func(e error) {
 		if e != nil {
 			errs = append(errs, e.Error())
 		}
 	}
-	collect(h.k8s.DeleteGroupClusterRoleBinding(ctx, groupName))
+	collect(k8sClient.DeleteGroupClusterRoleBinding(ctx, groupName))
 	if customRole && len(nsBindings) == 0 {
-		collect(h.k8s.DeleteGroupCustomClusterRole(ctx, groupName))
+		collect(k8sClient.DeleteGroupCustomClusterRole(ctx, groupName))
 	}
-	collect(h.k8s.DeleteAllGroupNamespaceBindings(ctx, groupName))
+	collect(k8sClient.DeleteAllGroupNamespaceBindings(ctx, groupName))
 	if len(errs) > 0 {
 		respondError(c, http.StatusInternalServerError, errors.New(strings.Join(errs, "; ")))
 		return
@@ -288,11 +309,11 @@ func (h *Handler) SyncGroup(c *gin.Context) {
 
 	var rbacErr error
 	if clusterRole != "" {
-		rbacErr = h.k8s.CreateGroupClusterRoleBinding(ctx, groupName, clusterRole)
+		rbacErr = k8sClient.CreateGroupClusterRoleBinding(ctx, groupName, clusterRole)
 	} else if customRole && len(nsBindings) == 0 {
-		rbacErr = h.k8s.CreateGroupCustomClusterRole(ctx, groupName, rules)
+		rbacErr = k8sClient.CreateGroupCustomClusterRole(ctx, groupName, rules)
 	} else if len(nsBindings) > 0 {
-		rbacErr = h.k8s.CreateGroupNamespaceBindings(ctx, groupName, nsBindings)
+		rbacErr = k8sClient.CreateGroupNamespaceBindings(ctx, groupName, nsBindings)
 	}
 	if rbacErr != nil {
 		respondError(c, http.StatusInternalServerError, fmt.Errorf("recreate rbac: %w", rbacErr))
