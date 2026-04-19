@@ -192,8 +192,10 @@ import AppLayout from '@/components/AppLayout.vue'
 import { listLocalUsers, createLocalUser, deleteLocalUser, resetLocalUserPassword, updateLocalUserRole, type LocalUser } from '@/api/localUsers'
 import { getSettings } from '@/api/settings'
 import { useAuth } from '@/composables/useAuth'
+import { useCluster } from '@/composables/useCluster'
 
 const { username: currentUsername } = useAuth()
+const { currentID } = useCluster()
 
 const enabled      = ref(false)
 const users        = ref<LocalUser[]>([])
@@ -322,7 +324,7 @@ async function load() {
 
 onMounted(async () => {
   try {
-    const s = await getSettings()
+    const s = await getSettings(currentID.value!)
     enabled.value = s.localUsersEnabled
   } catch {}
   if (enabled.value) await load()
