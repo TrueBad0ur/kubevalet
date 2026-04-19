@@ -42,18 +42,6 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return fmt.Errorf("migrate admin_users: %w", err)
 	}
-	_, err = pool.Exec(ctx, `
-		ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'viewer'
-	`)
-	if err != nil {
-		return fmt.Errorf("migrate admin_users role column: %w", err)
-	}
-	_, err = pool.Exec(ctx, `
-		UPDATE admin_users SET role = 'admin' WHERE username = 'admin' AND role != 'admin'
-	`)
-	if err != nil {
-		return fmt.Errorf("migrate admin_users admin role: %w", err)
-	}
 
 	_, err = pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS clusters (
@@ -86,16 +74,6 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("migrate groups: %w", err)
-	}
-
-	_, err = pool.Exec(ctx, `
-		CREATE TABLE IF NOT EXISTS app_settings (
-			key   VARCHAR(255) PRIMARY KEY,
-			value TEXT         NOT NULL DEFAULT ''
-		)
-	`)
-	if err != nil {
-		return fmt.Errorf("migrate app_settings: %w", err)
 	}
 
 	_, err = pool.Exec(ctx, `
