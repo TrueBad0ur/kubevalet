@@ -231,6 +231,33 @@ make build
 ./bin/kubevalet
 ```
 
+## Multi-cluster
+
+kubevalet can manage users and groups across multiple Kubernetes clusters from a single UI.
+
+### How it works
+
+- The **default cluster** is the one where kubevalet itself runs (in-cluster service account). It is created automatically on startup.
+- **Additional clusters** are added via the Clusters page (admin only) by pasting a kubeconfig with cluster-admin permissions.
+- Users and groups are **isolated per cluster** — switching clusters in the sidebar reloads all views for that cluster.
+- Kubeconfigs generated for users embed the `api_server` URL configured for each cluster (set at add time, editable in Settings).
+
+> **Security note:** Kubeconfigs for external clusters are stored as plaintext in PostgreSQL. Encrypt the database at rest before using in production.
+
+### Adding a cluster
+
+1. Go to **Clusters** in the sidebar.
+2. Click **+ Add Cluster**.
+3. Fill in:
+   - **Name** — identifier (DNS label format, e.g. `prod-eu`)
+   - **API Server** — external URL that will be embedded in generated kubeconfigs (e.g. `https://api.prod.example.com:6443`)
+   - **Kubeconfig** — paste a kubeconfig with cluster-admin access to the target cluster
+4. After adding, select the cluster from the sidebar dropdown to start managing its users and groups.
+
+### Switching clusters
+
+The sidebar shows a cluster dropdown when more than one cluster is configured. Selecting a cluster reloads Users, Groups, Graph, and Settings for that cluster. Templates are global across all clusters.
+
 ## Custom RBAC rules — API groups
 
 Each rule covers exactly one API group. Resources from different groups must be split into separate rules:
