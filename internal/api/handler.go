@@ -13,14 +13,12 @@ import (
 
 type Handler struct {
 	mgr *k8s.Manager
-	k8s *k8s.Client // default cluster client — used by existing handlers until per-cluster migration
 	cfg *config.Config
 	db  *pgxpool.Pool
 }
 
 func New(mgr *k8s.Manager, cfg *config.Config, db *pgxpool.Pool) *Handler {
-	defaultClient, _ := mgr.Get(context.Background(), mgr.DefaultID())
-	return &Handler{mgr: mgr, k8s: defaultClient, cfg: cfg, db: db}
+	return &Handler{mgr: mgr, cfg: cfg, db: db}
 }
 
 // RegisterPublic registers routes that do not require authentication.
@@ -101,8 +99,8 @@ func (h *Handler) clusterIDFromCtx(c *gin.Context) int64 {
 	return id
 }
 
-// clusterInfo returns apiServer and clusterName for a given cluster ID.
-// Falls back to app_settings (legacy), then env/config, then in-cluster host.
+// clusterInfo returns apiServer and clusterName for the given cluster.
+// Falls back to env/config, then in-cluster REST host.
 func (h *Handler) clusterInfo(ctx context.Context, clusterID int64) (apiServer, clusterName string) {
 	_ = h.db.QueryRow(ctx,
 		"SELECT api_server, cluster_name FROM clusters WHERE id=$1", clusterID,
@@ -120,10 +118,4 @@ func (h *Handler) clusterInfo(ctx context.Context, clusterID int64) (apiServer, 
 		clusterName = h.cfg.ClusterName
 	}
 	return
-}
-
-// clusterServer returns the API server URL for the default cluster (legacy compat).
-func (h *Handler) clusterServer(ctx context.Context) string {
-	apiServer, _ := h.clusterInfo(ctx, h.mgr.DefaultID())
-	return apiServer
 }
