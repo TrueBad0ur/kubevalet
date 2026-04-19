@@ -215,13 +215,17 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	}
 	rows.Close()
 
-	for _, csr := range csrs {
-		username := csr.Labels[k8s.LabelUsername]
-		if dbNames[username] {
-			continue
-		}
-		if u := h.importCSRUser(ctx, clusterID, k8sClient, csr); u != nil {
-			users = append(users, *u)
+	// CSR migration only runs for the default (in-cluster) cluster.
+	// External clusters manage their own CSRs independently.
+	if clusterID == h.mgr.DefaultID() {
+		for _, csr := range csrs {
+			username := csr.Labels[k8s.LabelUsername]
+			if dbNames[username] {
+				continue
+			}
+			if u := h.importCSRUser(ctx, clusterID, k8sClient, csr); u != nil {
+				users = append(users, *u)
+			}
 		}
 	}
 
