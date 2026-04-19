@@ -241,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, watch } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { useAuth } from '@/composables/useAuth'
 import { useCluster } from '@/composables/useCluster'
@@ -294,7 +294,8 @@ const { currentID } = useCluster()
 const loading  = ref(true)
 const loadError = ref('')
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
   try {
     groups.value = await listGroups(currentID.value!)
   } catch (e: any) {
@@ -302,7 +303,10 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
+watch(currentID, load)
 
 // ── Modal ────────────────────────────────────────────────────────
 const modal = reactive({

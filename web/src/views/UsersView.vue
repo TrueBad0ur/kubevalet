@@ -466,7 +466,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/AppLayout.vue'
 import { useAuth } from '@/composables/useAuth'
@@ -989,11 +989,17 @@ function downloadRenewKubeconfig() {
   URL.revokeObjectURL(url)
 }
 
-onMounted(async () => {
+async function reloadAll() {
   await load()
   try { allGroups.value = await listGroups(currentID.value!) } catch {}
+}
+
+onMounted(async () => {
+  await reloadAll()
   try { allTemplates.value = await listTemplates() } catch {}
 })
+
+watch(currentID, () => reloadAll())
 </script>
 
 <style scoped>
