@@ -97,6 +97,7 @@ ingress:
 httpRoute:
   enabled: false
   hostname: kubevalet.example.com
+  annotations: {}
   parentRefs:
     name: ""
     namespace: ""
