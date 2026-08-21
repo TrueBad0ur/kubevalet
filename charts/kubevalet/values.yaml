@@ -91,6 +91,16 @@ ingress:
   #    hosts:
   #      - kubevalet.example.com
 
+## Gateway API HTTPRoute — alternative to ingress above for clusters using a Gateway API
+## controller (e.g. kgateway, Envoy Gateway, Cilium Gateway). TLS is expected to terminate
+## upstream of the Gateway (e.g. at a reverse proxy); this route is plain HTTP.
+httpRoute:
+  enabled: false
+  hostname: kubevalet.example.com
+  parentRefs:
+    name: ""
+    namespace: ""
+
 ## Resource requests/limits for the kubevalet container
 resources:
   requests:
